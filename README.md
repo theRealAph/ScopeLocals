@@ -11,15 +11,15 @@ need to make sure that all of the per-thread structures scale well.
 
 ThreadLocals, and in particular inheritable thread locals, are a pain
 point in the design of Loom. Today, when a new Thread instance is
-created its set of inheritable ThreadLocals (a kind of hash map) is
-cloned. This is necessary because a Thread's set of ThreadLocals is,
-by design, mutable, so it cannot be shared. For that scalability
-reason, Loom's lightweight "Virtual Threads" do not support
-inheritable ThreadLocals.  However, inheritable ThreadLocals have a
-useful role in conveying context information from parent thread to
-child, so we need something else which will fill the gap.
+created its parent's set of inheritable ThreadLocals is cloned. This
+is necessary because a Thread's set of ThreadLocals is, by design,
+mutable, so it cannot be shared. For that scalability reason, Loom's
+lightweight "Virtual Threads" do not support inheritable ThreadLocals.
+However, inheritable ThreadLocals have a useful role in conveying
+context information from parent thread to child, so we need something
+else which will fill the gap.
 
-(Note: in current Java it is possible on thread creation to opt-out of
+(Note: in current Java it is possible on thread creation to opt out of
 inheriting thread-local variables, but that doesn't help if you really
 need them.)
 
@@ -33,10 +33,9 @@ this to work, the inherited context must be immutable.
 The core idea of ScopeLocals is to support something like a "special
 variable" in Common Lisp. This is a dynamically-scoped variable which
 acquires a value on entry to a lexical scope, and when that scope
-terminates, its previous value (or none) is restored. We also intend
+terminates, the previous value (or none) is restored. We also intend
 to support thread inheritance for scope locals, so that parallel
-constructs can easily set a value in the outer scope before threads
-start.
+constructs can set a value in the outer scope before threads start.
 
 One useful way to think of ScopeLocals is as invisible, effectively
 final, parameters which are passed to every method. These will be
@@ -58,17 +57,22 @@ transitively by them.)
   }
 ```
 
-Note that the declarations of ScopeLocals `x` and `y` have an explicit
+In this example, `run()` binds `x` and `y` to the results of
+evaluating `expr1` and `expr2` respectively. While the method `run()`
+is executing, any calls to `x.get()` and `y.get()` return the values
+that have been bound to them. The methods called from `run()`, and any
+methods called by them, comprise the dynamic scope of `run()`.
+
+(Note 1: the declarations of ScopeLocals `x` and `y` have an explicit
 type parameter. This allows us to make a strong guarantee that if any
 attempt is made to bind an object of the wrong type to a ScopeLocal
-we'll immediately throw a ClassCastException.
+we'll immediately throw a ClassCastException.)
 
-Also, the declarations of the ScopeLocals `x` and `y` have the usual
-Java access modifiers. Even though a scope local is passed to every
-method in its dynamic scope, a method will only be able to use get()
-if that ScopeLocal's name is visible to that method. So, sensitive
-security information can be passed through a stack of non-privileged
-invocations.
+(Note 2: `x` and `y` have the usual Java access modifiers. Even though
+a scope local is implicitly passed to every method in its dynamic
+scope, a method will only be able to use get() if that ScopeLocal's
+name is visible to that method. So, sensitive security information can
+be passed through a stack of non-privileged invocations.)
 
 ### A simple example
 
@@ -102,71 +106,25 @@ so:
 ```
 
 Whenever Thread instances (virtual or not) are created, the set of
-currently-bound inheritable ScopeLocals is inherited by the child
-thread. In addition, a `Snapshot()` operation which returns the
-current set of inheritable ScopeLocals is provided so that other kinds
-of tasks (e.g. a `ForkJoinTask`) can inherit ScopeLocals. This is done
-by means of a `ScopeLocal.runWithSnapshot` method.
+currently-bound inheritable ScopeLocals in the parent thread is
+automatically inherited by the child thread.
 
-## Compared with ThreadLocals
+In addition, a `Snapshot()` operation which captures the current set
+of inheritable ScopeLocals is provided. This allows context
+information to be shared with asynchronous computations.
 
-ScopeLocals are by design less general-purpose than ThreadLocals. The
-current value of a ScopeLocal cannot be changed within a method and
-neither can its value be returned to a caller. On the upside, this
-means ScopeLocals, unlike ThreadLocals can't leak memory if a
-programmer sets but "forgets" to remove a value once it's no longer
-needed.
+For example, a version of `ExecutorService.submit(Callable c)` that
+captures the current set of inheritable scope locals looks like this:
 
-About security: because a ScopeLocal is only bound to a value in an
-invocation, and when the scope of that invocation terminates the value
-of the ScopeLocal its previous value (or none) is restored, we can
-make some very strong guarantees. Firstly, bound values can never
-"leak" into the context of a caller, whch makes it safe to pass
-sensitive security context to a subtask. Also, for the same reason,
-within the context of a method we know that the value of a ScopeLocal
-is invariant. Inheritable ScopeLocal bindings can outlive the scope in
-which they are created, but non-inheritable bindings cannot.
+```
+    public <V> Future<V> submitWithCurrentSnapshot(ExecutorService executor, Callable<V> aCallable) {
+        var s = ScopeLocal.snapshot();
+        return executor.submit(() -> ScopeLocal.callWithSnapshot(aCallable, s));
+    }
+```
 
-## Appendix: performance, compared with ThreadLocal
-
-Although an API does not have any particular performance properties or
-guarantees, the ScopeLocal API was designed with efficiency in mind
-and it would be remiss not to talk about what a programmer can
-reasonably expect.
-
-### `get()`
-
-`ThreadLocal.get()` has time complexity of O(1) because a hash table
-is used. The first time `ScopeLocal.get()` used its time complexity is
-O(n), with n the size of the current set of bindings. However, we use
-a small per-thread cache so that repeated `get()` of the same
-ScopeLocal is, probabilistically, O(1). In practice `ScpoeLocal.get()`
-is extremely fast, about the same as a local variable. (C2 even hoists
-the result of `ScopeLocal.get()` into a register if a value is used
-repeatedly. This does not happen with `ThreadLocal`.) Also, it's not
-usually necessary for `ScopeLocal.get()` to perform a checkcast
-because we know that when a ScopeLocal is bound its type is checked.
-
-### Inheritance
-
-`ThreadLocal` inheritance is O(n) in both space and time. `ScopeLocal`
-inheritance is O(1), almost immeasurably small.
-
-### Binding operations
-
-Here the performance is broadly similar. ThreadLocal.set() is a
-HashTable insertion, and ScopeLocal the creation of a binding object
-and its insertion into the list of currently-bound `ScopeLocal`s.
-There's also the creation of a Callable or a Runnable: pretty cheap
-but non-zero.
-
-The first usage of `ThreadLocal.set()` is fairly expensive, but
-subsequent usages of `set()` on the same ThreadLocal are relatively
-cheap because it's not necessary to create a new object. ThreadLocal
-wins here by a small margin, as long as there is no cleanup `remove()`
-operation.
-
-### Snapshot
-
-Here there's no comparison: ThreadLocal has no equivalent.
-
+The `snapshot()` operation caputures the state of bound scope locals
+so that they can be retrieved by any code in the dynamic scope of the
+`submit()` method, whichever thread it's run on. These bound values
+are available for use even if the parent (i.e. the one that invoked
+`submitWithCurrentSnapshot()` has terminated.
