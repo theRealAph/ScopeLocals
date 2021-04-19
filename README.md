@@ -128,3 +128,6 @@ so that they can be retrieved by any code in the dynamic scope of the
 `submit()` method, whichever thread it's run on. These bound values
 are available for use even if the parent (i.e. the one that invoked
 `submitWithCurrentSnapshot()` has terminated.
+
+## API
+See http://people.redhat.com/~aph/loom-api/api/java.base/java/lang/ScopeLocal.html
