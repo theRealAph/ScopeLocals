@@ -3,36 +3,40 @@
 ## Rationale
 
 The need for scope locals arose originally from Project Loom. Loom
-enables a new style of Java programming where Threads are not a scarce
-resource to be carefully managed by thread pools but are much more
-abundant, limited only by memory. If we are to be able to create large
-numbers of threads &mdash; potentially millions &mdash; we'll need to
-make sure that all of the per-thread structures scale well.
+enables a new style of Java programming, where Threads are not a
+scarce resource to be carefully managed by thread pools but are much
+more abundant, limited only by memory. If we are to be able to create
+large numbers of threads &mdash; potentially millions &mdash; we'll
+need to make sure that all of the per-thread structures scale well.
 
 ThreadLocals, and in particular inheritable thread locals, are a pain
-point in the design of Loom. Every time a new Thread instance is
-created its set of ThreadLocals (a kind of hash map) is cloned. This
-is necessary because a Thread's set of ThreadLocals is, by design,
-mutable, so it cannot be shared. For that scalability reason, Loom's
-lightweight "Virtual Threads" do not support inheritable ThreadLocals.
-However, inheritable ThreadLocals have a useful role in conveying
-context information from parent thread to child, so we need something
-else which will fill the gap.
+point in the design of Loom. Today, when a new Thread instance is
+created its set of inheritable ThreadLocals (a kind of hash map) is
+cloned. This is necessary because a Thread's set of ThreadLocals is,
+by design, mutable, so it cannot be shared. For that scalability
+reason, Loom's lightweight "Virtual Threads" do not support
+inheritable ThreadLocals.  However, inheritable ThreadLocals have a
+useful role in conveying context information from parent thread to
+child, so we need something else which will fill the gap.
+
+(Note: in current Java it is possible on thread creation to opt-out of
+inheriting thread-local variables, but that doesn't help if you really
+need them.)
 
 Ideally we'd like to have a zero-copy operation when creating Threads,
-so that inheriting context requires only copying a pointer from the
-creating Thread (the parent) into the new Thread (the child). The
-inherited context should be immutable, so it can be shared between
-threads and other contexts without the need to copy it.
+so that inheriting context requires only the copying of a pointer from
+the creating Thread (the parent) into the new Thread (the child). For
+this to work, the inherited context must be immutable.
 
 ## Dynamically-scoped values
 
-The idea is to support something like a "special variable" in Common
-Lisp. This is a dynamically-scoped variable which acquires a value on
-entry to a lexical scope, and when that scope terminates, its previous
-value (or none) is restored. We also intend to support thread
-inheritance for scope locals, so that parallel constructs can easily
-set a value in the outer scope before threads start.
+The core idea of ScopeLocals is to support something like a "special
+variable" in Common Lisp. This is a dynamically-scoped variable which
+acquires a value on entry to a lexical scope, and when that scope
+terminates, its previous value (or none) is restored. We also intend
+to support thread inheritance for scope locals, so that parallel
+constructs can easily set a value in the outer scope before threads
+start.
 
 One useful way to think of ScopeLocals is as invisible, effectively
 final, parameters which are passed to every method. These will be
@@ -40,7 +44,7 @@ visible within the "dynamic scope" of a ScopeLocal's binding operation
 (i.e. the set of methods invoked within the binding scope and
 transitively by them.)
 
-## Syntax
+### Syntax
 
 ```
   // Declare scope locals x and y
@@ -66,7 +70,7 @@ if that ScopeLocal's name is visible to that method. So, sensitive
 security information can be passed through a stack of non-privileged
 invocations.
 
-## A simple example
+### A simple example
 
 The following example uses a ScopeLocal to make credentials available
 to callees.
@@ -87,10 +91,10 @@ to callees.
    }
 ```
 
-## Inheritance
+### Inheritance
 
 ScopeLocals are either inheritable or non-inheritable. The
-ineritability of a ScopeLocal is determined by its declaration,like
+ineritability of a ScopeLocal is determined by its declaration, like
 so:
 
 ```
@@ -120,7 +124,10 @@ make some very strong guarantees. Firstly, bound values can never
 "leak" into the context of a caller, whch makes it safe to pass
 sensitive security context to a subtask. Also, for the same reason,
 within the context of a method we know that the value of a ScopeLocal
-is invariant.
+is invariant. Inheritable ScopeLocal bindings can outlive the scope in
+which they are created, but non-inheritable bindings cannot.
+
+## Appendix: performance, compared with ThreadLocal
 
 Although an API does not have any particular performance properties or
 guarantees, the ScopeLocal API was designed with efficiency in mind
@@ -133,25 +140,25 @@ reasonably expect.
 is used. The first time `ScopeLocal.get()` used its time complexity is
 O(n), with n the size of the current set of bindings. However, we use
 a small per-thread cache so that repeated `get()` of the same
-ScopeLocal is, probabilistically, O(1). In practice `get()` is
-extremely fast, about the same as a local variable. (C2 even hoists
+ScopeLocal is, probabilistically, O(1). In practice `ScpoeLocal.get()`
+is extremely fast, about the same as a local variable. (C2 even hoists
 the result of `ScopeLocal.get()` into a register if a value is used
-repeatedly.) Also, it's not necessary for `get()` to perform a
-checkcast because we know that when a ScopeLocal is bound its type is
-checked.
+repeatedly. This does not happen with `ThreadLocal`.) Also, it's not
+usually necessary for `ScopeLocal.get()` to perform a checkcast
+because we know that when a ScopeLocal is bound its type is checked.
 
 ### Inheritance
 
-ThreadLocal inheritance is O(n) in both space and time. ScopeLocal
+`ThreadLocal` inheritance is O(n) in both space and time. `ScopeLocal`
 inheritance is O(1), almost immeasurably small.
 
 ### Binding operations
 
 Here the performance is broadly similar. ThreadLocal.set() is a
 HashTable insertion, and ScopeLocal the creation of a binding object
-and its insertion into the list of currently-bound
-ScopeLocals. There's also the creation of a Callable or a Runnable:
-pretty cheap but non-zero.
+and its insertion into the list of currently-bound `ScopeLocal`s.
+There's also the creation of a Callable or a Runnable: pretty cheap
+but non-zero.
 
 The first usage of `ThreadLocal.set()` is fairly expensive, but
 subsequent usages of `set()` on the same ThreadLocal are relatively
