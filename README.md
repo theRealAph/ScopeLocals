@@ -3,11 +3,11 @@
 ## Rationale
 
 The need for scope locals arose originally from Project Loom. Loom
-enables a new style of Java programming, where Threads are not a
+enables a new style of Java programming, where threads are not a
 scarce resource to be carefully managed by thread pools but are much
-more abundant, limited only by memory. If we are to be able to create
+more abundant, limited only by memory. To allow us to create
 large numbers of threads &mdash; potentially millions &mdash; we'll
-need to make sure that all of the per-thread structures scale well.
+need to make all of the per-thread structures scale well.
 
 ThreadLocals, and in particular inheritable thread locals, are a pain
 point in the design of Loom. Today, when a new Thread instance is
@@ -17,7 +17,7 @@ mutable, so it cannot be shared. For that scalability reason, Loom's
 lightweight "Virtual Threads" do not support inheritable ThreadLocals.
 However, inheritable ThreadLocals have a useful role in conveying
 context information from parent thread to child, so we need something
-else which will fill the gap.
+else to fill the gap.
 
 (Note: in current Java it is possible on thread creation to opt out of
 inheriting thread-local variables, but that doesn't help if you really
