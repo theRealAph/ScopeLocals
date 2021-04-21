@@ -28,19 +28,19 @@ so that inheriting context requires only the copying of a pointer from
 the creating Thread (the parent) into the new Thread (the child). For
 this to work, the inherited context must be immutable.
 
-## Dynamically-scoped values
+## Dynamically scoped values
 
 The core idea of ScopeLocals is to support something like a "special
-variable" in Common Lisp. This is a dynamically-scoped variable which
-acquires a value on entry to a lexical scope, and when that scope
+variable" in Common Lisp. This is a dynamically scoped variable, which
+acquires a value on entry to a lexical scope; when that scope
 terminates, the previous value (or none) is restored. We also intend
 to support thread inheritance for scope locals, so that parallel
 constructs can set a value in the outer scope before threads start.
 
 One useful way to think of ScopeLocals is as invisible, effectively
-final, parameters which are passed to every method. These will be
+final, parameters that are passed to every method. These parameters will be
 visible within the "dynamic scope" of a ScopeLocal's binding operation
-(i.e. the set of methods invoked within the binding scope and
+(i.e. the set of methods invoked within the binding scope, and any methods invoked
 transitively by them.)
 
 ### Syntax
@@ -98,7 +98,7 @@ to callees.
 ### Inheritance
 
 ScopeLocals are either inheritable or non-inheritable. The
-ineritability of a ScopeLocal is determined by its declaration, like
+inheritability of a ScopeLocal is determined by its declaration, like
 so:
 
 ```
@@ -106,10 +106,10 @@ so:
 ```
 
 Whenever Thread instances (virtual or not) are created, the set of
-currently-bound inheritable ScopeLocals in the parent thread is
+currently bound inheritable ScopeLocals in the parent thread is
 automatically inherited by the child thread.
 
-In addition, a `Snapshot()` operation which captures the current set
+In addition, a `Snapshot()` operation that captures the current set
 of inheritable ScopeLocals is provided. This allows context
 information to be shared with asynchronous computations.
 
