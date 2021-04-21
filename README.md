@@ -9,11 +9,11 @@ more abundant, limited only by memory. To allow us to create
 large numbers of threads &mdash; potentially millions &mdash; we'll
 need to make all of the per-thread structures scale well.
 
-ThreadLocals, and in particular inheritable thread locals, are a pain
+ThreadLocals, and in particular inheritable ThreadLocals, are a pain
 point in the design of Loom. Today, when a new Thread instance is
-created its parent's set of inheritable ThreadLocals is cloned. This
+created, its parent's set of inheritable ThreadLocals is cloned. This
 is necessary because a Thread's set of ThreadLocals is, by design,
-mutable, so it cannot be shared. For that scalability reason, Loom's
+mutable, so it cannot be shared. For scalability, Loom's
 lightweight "Virtual Threads" do not support inheritable ThreadLocals.
 However, inheritable ThreadLocals have a useful role in conveying
 context information from parent thread to child, so we need something
