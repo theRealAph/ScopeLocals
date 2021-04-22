@@ -40,7 +40,7 @@ constructs can set a value in the parent before threads start.
 One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed to every method. These parameters
 will be visible within the "dynamic scope" of a scope local's binding
-operation (i.e. the set of methods invoked within the binding scope,
+operation (the set of methods invoked within the binding scope,
 and any methods invoked transitively by them.)
 
 ### Some examples
@@ -109,10 +109,10 @@ database with a less-privileged set of credentials, like so:
    });      
 ```
 
-This "shadowing" only extends until the end of the end of the dynamic
+This "shadowing" only extends until the end of the dynamic
 scope of the lambda above.
  
-(NB: This code example assumes that CREDENTIALS is already bound to a
+(This code example assumes that CREDENTIALS is already bound to a
 highly-privileged set of credentials.)
 
 ### Inheritance
