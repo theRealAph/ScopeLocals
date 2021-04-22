@@ -31,7 +31,7 @@ this to work, the inherited context must be immutable.
 ## Dynamically scoped values
 
 The core idea of scope locals is to support something like a "special
-variable" in Common Lisp. This is a dynamically-scoped variable, which
+variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
 terminates, the previous value (or none) is restored. We also intend
 to support thread inheritance for scope locals, so that parallel
@@ -113,7 +113,7 @@ This "shadowing" only extends until the end of the dynamic
 scope of the lambda above.
  
 (This code example assumes that CREDENTIALS is already bound to a
-highly-privileged set of credentials.)
+highly privileged set of credentials.)
 
 ### Inheritance
 
@@ -126,7 +126,7 @@ so:
 ```
 
 Whenever `Thread` instances (virtual or not) are created, the set of
-currently-bound inheritable scope locals in the parent thread is
+currently bound inheritable scope locals in the parent thread is
 automatically inherited by the child thread.
 
 In addition, a `Snapshot()` operation that captures the current set
