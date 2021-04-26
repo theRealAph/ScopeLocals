@@ -176,6 +176,17 @@ automatically inherited by each child thread:
     }
 ```
 
+Inheritable scope locals are also inherited by operations in a
+parallel stream:
+
+```
+    void parallelStreamExample() {
+        Credentials creds = new Credentials("MySecret");
+        ScopeLocal.where(CREDENTIALS, creds).run(() -> {
+            persons.parallelStream().forEach((Person p) -> connectDatabase().append(p));
+        });
+    }
+```
 
 In addition, a `Snapshot()` operation that captures the current set
 of inheritable scope locals is provided. This allows context
