@@ -2,17 +2,17 @@
 
 ## Motivation
 
-So you want to invoke a method `X`in a library which later calls back
+So you want to invoke a method `X` in a library which later calls back
 into your code. In your callback you need some context, perhaps a
 transaction ID or some `File` instances. However, `X` provides no way
 to pass a reference through their code into your callback.  What are
-you to do? Unfortunately, you don't have much choice other than to
-store the context into what is, in effect, a global variable. A
-`ThreadLocal` instance is a slight improvement on a global variable,
-in that you can have multiple instances in a program, one per thread.
-However, this kind of usage is still not re-entrant, so if `X` calls
-back into your method you'll be in trouble. And if the callback
-happens on a different thread, this approach breaks down altogether.
+you to do? Unfortunately, you're going to have to store the context
+into what is, in effect, a global variable. A `ThreadLocal` instance
+is a slight improvement on a global variable, in that you can have
+multiple instances in a program, one per thread. However, this kind of
+usage is still not re-entrant, so if `X` in turn calls back into your
+method you'll be in trouble. And if the callback happens on a
+different thread, this approach breaks down altogether.
 
 The core idea of scope locals is to support something like a "special
 variable" in Common Lisp. This is a dynamically-scoped variable, which
@@ -38,12 +38,12 @@ limited only by memory. To allow us to create large numbers of threads
 per-thread structures scale well.
 
 Thread-local variables, and in particular inheritable thread locals,
-are a pain point in the design of Loom. Today, when a new `Thread`
-instance is created, its parent's set of inheritable thread-local
-variables is cloned. This is necessary because a thread's set of
-thread locals is, by design, mutable, so it cannot be shared. So every
-child thread ends up carrying a copy of its parents entire set of
-thread locals, whether the child needs them or not.
+are a pain point in the design of Loom. When a new `Thread` instance
+is created, its parent's set of inheritable thread-local variables is
+cloned. This is necessary because a thread's set of thread locals is,
+by design, mutable, so it cannot be shared. So every child thread ends
+up carrying a copy of its parents entire set of thread locals, whether
+the child needs them or not.
 
 (Note: in current Java it is possible on thread creation to opt out of
 inheriting any thread-local variables, but that doesn't help if you
@@ -57,13 +57,15 @@ this to work, the inherited context must be immutable.
 Scope locals also provide us with some other nice-to-have features, in
 particular:
 
-* Strong Typing. When a scope local is bound to a value, its type is
-  checked. This means that an error message is delivered at the point
-  an error was made rather than later.
+* Strong Typing. Whenever a scope local is bound to a value, its type
+  is checked. This means that an error message is delivered at the
+  point an error was made rather than later. Also, there are usually
+  more instances of `get()` than there are bindings.
 * Immutability. The value bound to a scope local cannot change within
   a method. (It can be re-bound in a callee, of which more later.)
 * Well-defined extent. A scope local is bound to a value at the start
-  of a scope and its previous value (or none) is restored at the end.
+  of a scope and its previous value (or none) is always restored at
+  the end.
 * Optimization opportunities. These properties allow us to generate
   excellent code. In many cases a scope-local `get()` is as fast as a
   local variable.
@@ -96,26 +98,28 @@ we'll immediately throw a ClassCastException.)
 (Note 2: `x` and `y` have the usual Java access modifiers. Even though
 a scope local is implicitly passed to every method in its dynamic
 scope, a method will only be able to use get() if that scope local's
-name is accessible to that method. So, sensitive security information can
-be passed through a stack of non-privileged invocations.)
+name is accessible to the method. So, sensitive security information
+can be passed through a stack of non-privileged invocations.)
 
 The following example uses a scope local to make credentials available
 to callees.
 
 ```
-   private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.forType(Credentials.class);
+    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.forType(Credentials.class);
 
-   Credentials creds = ...
-   ScopeLocal.where(CREDENTIALS, creds).run(() -> {
-       :
-       Connection connection = connectDatabase();
-       :
-   });
+    Credentials creds = ...
+    ScopeLocal.where(CREDENTIALS, creds).run(() -> {
+        :
+        Connection connection = connectDatabase();
+        :
+    });
 
-   Connection connectDatabase() {
-       Credentials credentials = CREDENTIALS.get();
-       :
-   }
+    Connection connectDatabase() {
+        if (CREDENTIALS.get().s != "MySecret") {
+            throw new SecurityException("No dice, son");
+        }
+        return new Connection();
+    }
 ```
 
 ### Shadowing
@@ -137,8 +141,8 @@ database with a less-privileged set of credentials, like so:
 This "shadowing" only extends until the end of the end of the dynamic
 scope of the lambda above.
  
-(NB: This code example assumes that `CREDENTIALS` is already bound to a
-highly-privileged set of credentials.)
+(Note: This code example assumes that `CREDENTIALS` is already bound
+to a highly-privileged set of credentials.)
 
 ### Inheritance
 
@@ -152,7 +156,26 @@ so:
 
 Whenever `Thread` instances (virtual or not) are created, the set of
 currently-bound inheritable scope locals in the parent thread is
-automatically inherited by the child thread.
+automatically inherited by each child thread:
+
+```
+    private static final ScopeLocal<Credentials> CREDENTIALS 
+        = ScopeLocal.inheritableForType(Credentials.class);
+
+    void multipleThreadExample() {
+        Credentials creds = new Credentials("MySecret");
+        ScopeLocal.where(CREDENTIALS, creds).run(() -> {
+            for (int i = 0; i < 10; i++) {
+                virtualThreadExecutor.submit(() -> {
+                    // ...
+                    Connection connection = connectDatabase();
+                    // ...
+                });
+            }
+        });
+    }
+```
+
 
 In addition, a `Snapshot()` operation that captures the current set
 of inheritable scope locals is provided. This allows context
@@ -183,8 +206,9 @@ generate excellent code.
 * The bound value of a scope local is immutable within a method. It
   may be re-bound in a callee, but we know that when the callee
   terminates the scope local's value will have been restored. For that
-  reason, we can hoist the value of a scope local into a register.
-  Repeated uses of a scope local can be as fast as a local variable.
+  reason, we can hoist the value of a scope local into a register at
+  the start of a mathod. Repeated uses of a scope local can be as fast
+  as a local variable.
 
 * We don't have to check the type of a scope local every time we
   invoke `get()` because we know that its type was checked earlier.
