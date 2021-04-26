@@ -28,15 +28,19 @@ so that inheriting context requires only the copying of a pointer from
 the creating thread (the parent) into the new thread (the child). For
 this to work, the inherited context must be immutable.
 
-This gives us with the opportunity to provide some other nice-to-have
-features, in particular:
+Scope locals give us with an opportunity to provide some other
+nice-to-have features, in particular:
 
-* Strong Typing. When a scope local is bound to a value, its type is checked. This means that an error message is delivered at the point an error was made rather than later.
-  * Immutability. The value bound to a scope local cannot change within a method. (It can be re-bound in a callee, of which more later.)
-  * Well-defined extent. A scope local is bound to a value at the start of a scope and its previous value (or none) is restored at the end.
-  * Optimization opportunities: 
-    * We don't have to check the type of a scope local each time we `get()` it.
-    * Because we know that the value bound to a scope local cannot change within a method, we can generate excellent code.
+* Strong Typing. When a scope local is bound to a value, its type is
+  checked. This means that an error message is delivered at the point
+  an error was made rather than later.
+* Immutability. The value bound to a scope local cannot change within
+  a method. (It can be re-bound in a callee, of which more later.)
+* Well-defined extent. A scope local is bound to a value at the start
+  of a scope and its previous value (or none) is restored at the end.
+* Optimization opportunities. These properties allow us to generate
+  excellent code. In many cases a scope local `get()` is as fast as a
+  local variable in a method.
 
 ## Dynamically scoped values
 
@@ -158,6 +162,8 @@ that they can be retrieved by any code in the dynamic scope of the
 `submit()` method, whichever thread it's run on. These bound values
 are available for use even if the parent (i.e. the one that invoked
 `submitWithCurrentSnapshot()` has terminated.
+
+## Optimization
 
 ## API
 
