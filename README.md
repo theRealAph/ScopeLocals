@@ -14,6 +14,8 @@ usage is still not re-entrant, so if `X` in turn calls back into your
 method you'll be in trouble. And if the callback happens on a
 different thread, this approach breaks down altogether.
 
+We need a better way to do this.
+
 The core idea of scope locals is to support something like a "special
 variable" in Common Lisp. This is a dynamically-scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
@@ -26,7 +28,7 @@ final, parameters that are passed to every method. These parameters
 will be accessible within the "dynamic scope" of a scope local's
 binding operation (i.e. the set of methods invoked within the binding
 scope, and any methods invoked transitively by them.) They are
-guaranteed to be re-entrant.
+guaranteed to be re-entrant &mdash; when used correctly.
 
 ## Dynamically-scoped values
 
@@ -41,8 +43,8 @@ Thread-local variables, and in particular inheritable thread locals,
 are a pain point in the design of Loom. When a new `Thread` instance
 is created, its parent's set of inheritable thread-local variables is
 cloned. This is necessary because a thread's set of thread locals is,
-by design, mutable, so it cannot be shared. So every child thread ends
-up carrying a copy of its parents entire set of thread locals, whether
+by design, mutable, so it cannot be shared. Every child thread ends up
+carrying a copy of its parent's entire set of thread locals, whether
 the child needs them or not.
 
 (Note: in current Java it is possible on thread creation to opt out of
@@ -58,17 +60,18 @@ Scope locals also provide us with some other nice-to-have features, in
 particular:
 
 * Strong Typing. Whenever a scope local is bound to a value, its type
-  is checked. This means that an error message is delivered at the
-  point an error was made rather than later. Also, there are usually
-  more instances of `get()` than there are bindings.
+  is checked. This means that a `ClassCastException` is delivered at
+  the point an error was made rather than later. Also, there are
+  usually more instances of `get()` than there are bindings, so it
+  makes sense to do the check early.
 * Immutability. The value bound to a scope local cannot change within
   a method. (It can be re-bound in a callee, of which more later.)
 * Well-defined extent. A scope local is bound to a value at the start
   of a scope and its previous value (or none) is always restored at
   the end.
 * Optimization opportunities. These properties allow us to generate
-  excellent code. In many cases a scope-local `get()` is as fast as a
-  local variable.
+  good code. In many cases a scope-local `get()` is as fast as a local
+  variable.
 
 ### Some examples
 
@@ -135,7 +138,7 @@ database with a less-privileged set of credentials, like so:
         :
         Connection connection = connectDatabase();
         :
-   });      
+      });
 ```
 
 This "shadowing" only extends until the end of the end of the dynamic
@@ -147,7 +150,7 @@ to a highly-privileged set of credentials.)
 ### Inheritance
 
 Scope locals are either inheritable or non-inheritable. The
-inheritability of a scope local is determined by its declaration, like
+inheritability of a scope local is determined by its definition, like
 so:
 
 ```
@@ -211,14 +214,14 @@ terminated.
 
 ## Optimization
 
-Scope locals have some strongly-defined properties. These allow us to
-generate excellent code.
+Scope locals have some strongly-defined properties. These can allow us
+to generate excellent code for `get()`.
 
 * The bound value of a scope local is immutable within a method. It
   may be re-bound in a callee, but we know that when the callee
   terminates the scope local's value will have been restored. For that
   reason, we can hoist the value of a scope local into a register at
-  the start of a mathod. Repeated uses of a scope local can be as fast
+  the start of a method. Repeated uses of a scope local can be as fast
   as a local variable.
 
 * We don't have to check the type of a scope local every time we
