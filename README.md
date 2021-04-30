@@ -2,10 +2,10 @@
 
 ## Summary
 
-Enhance the Java programming language with scope locals, which are
-dynamically-scoped, effectively final, local variables. They allow a
-lightweight form of thread inheritance, which is useful in systems
-with many threads and tasks.
+Enhance the Java API with scope locals, which are dynamically-scoped,
+effectively final, local variables. They allow a lightweight form of
+thread inheritance, which is useful in systems with many threads and
+tasks.
 
 ## History
 
@@ -41,11 +41,12 @@ inheritance for scope locals, so that parallel constructs can set a
 value in the parent before threads start.
 
 One useful way to think of scope locals is as invisible, effectively
-final, parameters that are passed to every method. These parameters
-will be accessible within the "dynamic scope" of a scope local's
-binding operation (i.e. the set of methods invoked within the binding
-scope, and any methods invoked transitively by them.) They are
-guaranteed to be re-entrant &mdash; when used correctly.
+final, parameters that are passed through every method
+invocation. These parameters will be accessible within the "dynamic
+scope" of a scope local's binding operation (i.e. the set of methods
+invoked within the binding scope, and any methods invoked transitively
+by them.) They are guaranteed to be re-entrant &mdash; when used
+correctly.
 
 ## Description
 
@@ -64,7 +65,7 @@ really need one of them.)
 Ideally we'd like to have a zero-copy operation when creating threads,
 so that inheriting context requires only the copying of a pointer from
 the creating thread (the parent) into the new thread (the child). For
-this to work, the inherited context must be immutable.
+this to work, the inherited context must be effectively final.
 
 Scope locals also provide us with some other nice-to-have features, in
 particular:
@@ -74,8 +75,9 @@ particular:
   the point an error was made rather than later. Also, there are
   usually more invocations of `get()` than there are binding
   operations, so it makes sense to do the check early.
-* Immutability. The value bound to a scope local cannot change within
-  a method. (It can be re-bound in a callee, of which more later.)
+* Effective finality. The value bound to a scope local cannot change
+  within a method. (It can be re-bound in a callee, of which more
+  later.)
 * Well-defined extent. A scope local is bound to a value at the start
   of a scope and its previous value (or none) is always restored at
   the end.
@@ -237,12 +239,12 @@ terminated.
 Scope locals have some strongly-defined properties. These can allow us
 to generate excellent code for `get()`.
 
-* The bound value of a scope local is immutable within a method. It
-  may be re-bound in a callee, but we know that when the callee
-  terminates the scope local's value will have been restored. For that
-  reason, we can hoist the value of a scope local into a register at
-  the start of a method. Repeated uses of a scope local can be as fast
-  as a local variable.
+* The bound value of a scope local is effectively final within a
+  method. It may be re-bound in a callee, but we know that when the
+  callee terminates the scope local's value will have been
+  restored. For that reason, we can hoist the value of a scope local
+  into a register at the start of a method. Repeated uses of a scope
+  local can be as fast as a local variable.
 
 * We don't have to check the type of a scope local every time we
   invoke `get()` because we know that its type was checked earlier.
