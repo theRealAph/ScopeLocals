@@ -1,5 +1,22 @@
 # Scope Locals
 
+## Summary
+
+Enhance the Java programming language with scope locals, which are
+dynamically-scoped, effectively final, local variables. They allow a
+lightweight form of thread inheritance, which is useful in systems
+with many threads and tasks.
+
+## History
+
+The need for scope locals arose from Project Loom. Loom enables a new
+style of Java programming, where threads are not a scarce resource to
+be carefully managed by thread pools but are much more abundant,
+limited only by memory. To allow us to create large numbers of threads
+&mdash; potentially millions &mdash; we'll need to make all of the
+per-thread structures scale well. This means that as much state as
+possible must be shared between threads.
+
 ## Motivation
 
 So you want to invoke a method `X` in a library which later calls back
@@ -30,14 +47,7 @@ binding operation (i.e. the set of methods invoked within the binding
 scope, and any methods invoked transitively by them.) They are
 guaranteed to be re-entrant &mdash; when used correctly.
 
-## Dynamically-scoped values
-
-The need for scope locals arose from Project Loom. Loom enables a new
-style of Java programming, where threads are not a scarce resource to
-be carefully managed by thread pools but are much more abundant,
-limited only by memory. To allow us to create large numbers of threads
-&mdash; potentially millions &mdash; we'll need to make all of the
-per-thread structures scale well.
+## Description
 
 Thread-local variables, and in particular inheritable thread locals,
 are a pain point in the design of Loom. When a new `Thread` instance
@@ -62,8 +72,8 @@ particular:
 * Strong Typing. Whenever a scope local is bound to a value, its type
   is checked. This means that a `ClassCastException` is delivered at
   the point an error was made rather than later. Also, there are
-  usually more instances of `get()` than there are bindings, so it
-  makes sense to do the check early.
+  usually more invocations of `get()` than there are binding
+  operations, so it makes sense to do the check early.
 * Immutability. The value bound to a scope local cannot change within
   a method. (It can be re-bound in a callee, of which more later.)
 * Well-defined extent. A scope local is bound to a value at the start
@@ -149,6 +159,12 @@ to a highly-privileged set of credentials.)
 
 ### Inheritance
 
+In our example above that uses a scope local to make credentials
+available to callees, the callback is run on the same thread as the
+caller. However, sometimes a method decomposes a task into several
+parallel sub-tasks, but we still need to share some attributes with
+them. For that we use scope-local inheritance.
+
 Scope locals are either inheritable or non-inheritable. The
 inheritability of a scope local is determined by its definition, like
 so:
@@ -178,6 +194,10 @@ automatically inherited by each child thread:
         });
     }
 ```
+
+(Implementation note: The scope-local credentials in this example are
+not copied into each child thread. Instead, a reference to an
+immutable set of scope-local bindings is passed to the child.)
 
 Inheritable scope locals are also inherited by operations in a
 parallel stream:
@@ -212,7 +232,7 @@ on. These bound values are available for use even if the parent
 (i.e. the one that invoked `submitWithCurrentSnapshot()` has
 terminated.
 
-## Optimization
+### Optimization
 
 Scope locals have some strongly-defined properties. These can allow us
 to generate excellent code for `get()`.
@@ -226,9 +246,17 @@ to generate excellent code for `get()`.
 
 * We don't have to check the type of a scope local every time we
   invoke `get()` because we know that its type was checked earlier.
-
-## API
+  
+### API
 
 There is more detail in the Javadoc for the API, at
 
 http://people.redhat.com/~aph/loom-api/api/java.base/java/lang/ScopeLocal.html
+
+## Alternatives
+
+It is possible to emulate most of the features of scope locals with
+`ThreadLocal`s, albeit at some cost in memory footprint, runtime
+security, and performance. However, inheritable `ThreadLocal`s don't
+really work with thread pools, and run the risk of leaking information
+between unrelated tasks.
