@@ -15,11 +15,13 @@ be carefully managed by thread pools but are much more abundant,
 limited only by memory. To allow us to create large numbers of threads
 &mdash; potentially millions &mdash; we'll need to make all of the
 per-thread structures scale well. This means that as much state as
-possible must be shared between threads.
+possible must be shared between threads. Thread-local variables, and
+in particular inheritable thread locals, are a pain point in the
+design of Loom.
 
 ## Motivation
 
-So you want to invoke a method `X` in a library which later calls back
+So you want to invoke a method `X` in a library that later calls back
 into your code. In your callback you need some context, perhaps a
 transaction ID or some `File` instances. However, `X` provides no way
 to pass a reference through their code into your callback.  What are
@@ -43,15 +45,14 @@ value in the parent before threads start.
 One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed through every method
 invocation. These parameters will be accessible within the "dynamic
-scope" of a scope local's binding operation (i.e. the set of methods
+scope" of a scope local's binding operation (the set of methods
 invoked within the binding scope, and any methods invoked transitively
 by them.) They are guaranteed to be re-entrant &mdash; when used
 correctly.
 
 ## Description
 
-Thread-local variables, and in particular inheritable thread locals,
-are a pain point in the design of Loom. When a new `Thread` instance
+When a new `Thread` instance
 is created, its parent's set of inheritable thread-local variables is
 cloned. This is necessary because a thread's set of thread locals is,
 by design, mutable, so it cannot be shared. Every child thread ends up
@@ -70,18 +71,18 @@ this to work, the inherited context must be effectively final.
 Scope locals also provide us with some other nice-to-have features, in
 particular:
 
-* Strong Typing. Whenever a scope local is bound to a value, its type
+* **Strong typing** Whenever a scope local is bound to a value, its type
   is checked. This means that a `ClassCastException` is delivered at
   the point an error was made rather than later. Also, there are
   usually more invocations of `get()` than there are binding
   operations, so it makes sense to do the check early.
-* Effective finality. The value bound to a scope local cannot change
+* **Effective finality** The value bound to a scope local cannot change
   within a method. (It can be re-bound in a callee, of which more
   later.)
-* Well-defined extent. A scope local is bound to a value at the start
+* **Well-defined extent** A scope local is bound to a value at the start
   of a scope and its previous value (or none) is always restored at
   the end.
-* Optimization opportunities. These properties allow us to generate
+* **Optimization opportunities** These properties allow us to generate
   good code. In many cases a scope-local `get()` is as fast as a local
   variable.
 
@@ -133,7 +134,7 @@ to callees.
 
     Connection connectDatabase() {
         if (CREDENTIALS.get().s != "MySecret") {
-            throw new SecurityException("No dice, son");
+            throw new SecurityException("No dice!");
         }
         return new Connection();
     }
@@ -233,7 +234,7 @@ In this example, the `snapshot()` operation captures the state of
 bound scope locals so that they can be retrieved by any code in the
 dynamic scope of the `submit()` method, whichever thread it's run
 on. These bound values are available for use even if the parent
-(i.e. the one that invoked `submitWithCurrentSnapshot()` has
+(the one that invoked `submitWithCurrentSnapshot()`) has
 terminated.
 
 ### Optimization
@@ -246,7 +247,7 @@ to generate excellent code for `get()`.
   callee terminates the scope local's value will have been
   restored. For that reason, we can hoist the value of a scope local
   into a register at the start of a method. Repeated uses of a scope
-  local can be as fast as a local variable.
+  local can be as fast as using a local variable.
 
 * We don't have to check the type of a scope local every time we
   invoke `get()` because we know that its type was checked earlier.
