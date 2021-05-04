@@ -45,6 +45,8 @@ different thread, this approach breaks down altogether.
 
 We need a better way to do this.
 
+## Description
+
 The core idea of scope locals is to support something like a "special
 variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
@@ -59,8 +61,6 @@ scope" of a scope local's binding operation (the set of methods
 invoked within the binding scope, and any methods invoked transitively
 by them.) They are guaranteed to be re-entrant &mdash; when used
 correctly.
-
-## Description
 
 Ideally we'd like to have a zero-copy operation when creating threads,
 so that inheriting context requires only the copying of a pointer from
