@@ -15,9 +15,19 @@ be carefully managed by thread pools but are much more abundant,
 limited only by memory. To allow us to create large numbers of threads
 &mdash; potentially millions &mdash; we'll need to make all of the
 per-thread structures scale well. This means that as much state as
-possible must be shared between threads. Thread-local variables, and
-in particular inheritable thread locals, are a pain point in the
-design of Loom.
+possible must be shared between threads.
+
+Thread-local variables, and in particular inheritable thread locals,
+are a pain point in the design of Loom. When a new `Thread` instance
+is created, its parent's set of inheritable thread-local variables is
+cloned. This is necessary because a thread's set of thread locals is,
+by design, mutable, so it cannot be shared. Every child thread ends up
+carrying a copy of its parent's entire set of thread locals, whether
+the child needs them or not.
+
+(Note: in current Java it is possible on thread creation to opt out of
+inheriting any thread-local variables, but that doesn't help if you
+really need one of them.)
 
 ## Motivation
 
@@ -51,17 +61,6 @@ by them.) They are guaranteed to be re-entrant &mdash; when used
 correctly.
 
 ## Description
-
-When a new `Thread` instance
-is created, its parent's set of inheritable thread-local variables is
-cloned. This is necessary because a thread's set of thread locals is,
-by design, mutable, so it cannot be shared. Every child thread ends up
-carrying a copy of its parent's entire set of thread locals, whether
-the child needs them or not.
-
-(Note: in current Java it is possible on thread creation to opt out of
-inheriting any thread-local variables, but that doesn't help if you
-really need one of them.)
 
 Ideally we'd like to have a zero-copy operation when creating threads,
 so that inheriting context requires only the copying of a pointer from
