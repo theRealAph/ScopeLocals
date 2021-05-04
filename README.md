@@ -104,6 +104,8 @@ of evaluating `expr1` and `expr2` respectively. While the method
 `run()` is executing, any calls to `x.get()` and `y.get()` return the
 values that have been bound to them. The methods called from `run()`,
 and any methods called by them, comprise the dynamic scope of `run()`.
+Because scope locals are effectively final, there is no equivalent of
+the `ThreadLocal.set()` method.
 
 (Note 1: the declarations of scope locals `x` and `y` have an explicit
 type parameter. This allows us to make a strong guarantee that if any
@@ -112,7 +114,7 @@ we'll immediately throw a ClassCastException.)
 
 (Note 2: `x` and `y` have the usual Java access modifiers. Even though
 a scope local is implicitly passed to every method in its dynamic
-scope, a method will only be able to use get() if that scope local's
+scope, a method will only be able to use `get()` if that scope local's
 name is accessible to the method. So, sensitive security information
 can be passed through a stack of non-privileged invocations.)
 
