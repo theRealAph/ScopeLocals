@@ -9,21 +9,26 @@ tasks.
 
 ## History
 
-The need for scope locals arose from Project Loom. Loom enables a new
-style of Java programming, where threads are not a scarce resource to
-be carefully managed by thread pools but are much more abundant,
-limited only by memory. To allow us to create large numbers of threads
-&mdash; potentially millions &mdash; we'll need to make all of the
-per-thread structures scale well. This means that as much state as
-possible must be shared between threads.
+The need for scope locals arose from Project Loom. Loom enables a way
+of Java programming where threads are not a scarce resource to be
+carefully managed by thread pools but are much more abundant, limited
+only by memory. To allow us to create large numbers of threads &mdash;
+potentially millions &mdash; we'll need to make all of the per-thread
+structures scale well. This means that as much state as possible must
+be shared between threads.
 
 Thread-local variables, and in particular inheritable thread locals,
 are a pain point in the design of Loom. When a new `Thread` instance
 is created, its parent's set of inheritable thread-local variables is
 cloned. This is necessary because a thread's set of thread locals is,
 by design, mutable, so it cannot be shared. Every child thread ends up
-carrying a copy of its parent's entire set of thread locals, whether
-the child needs them or not.
+carrying a local copy of its parent's entire set of thread locals,
+whether the child needs them or not.
+
+Ideally we'd like to have a zero-copy operation when creating threads,
+so that inheriting context requires only the copying of a pointer from
+the creating thread (the parent) into the new thread (the child). For
+this to work, the inherited context must be effectively final.
 
 (Note: in current Java it is possible on thread creation to opt out of
 inheriting any thread-local variables, but that doesn't help if you
@@ -52,23 +57,17 @@ variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
 terminates, the previous value (or none) is restored. We also support
 inheritance for scope locals, so that parallel constructs can set a
-value in the parent before threads start.
+value in the parent before sub-tasks start.
 
 One useful way to think of scope locals is as invisible, effectively
-final, parameters that are passed through every method
-invocation. These parameters will be accessible within the "dynamic
-scope" of a scope local's binding operation (the set of methods
-invoked within the binding scope, and any methods invoked transitively
-by them.) They are guaranteed to be re-entrant &mdash; when used
-correctly.
+final, parameters that are passed through every method invocation.
+These parameters will be accessible within the "dynamic scope" of a
+scope local's binding operation (the set of methods invoked within the
+binding scope, and any methods invoked transitively by them.) They are
+guaranteed to be re-entrant &mdash; when used correctly.
 
-Ideally we'd like to have a zero-copy operation when creating threads,
-so that inheriting context requires only the copying of a pointer from
-the creating thread (the parent) into the new thread (the child). For
-this to work, the inherited context must be effectively final.
-
-Scope locals also provide us with some other nice-to-have features, in
-particular:
+Scope locals can also provide us with some other nice-to-have
+features, in particular:
 
 * **Strong typing** Whenever a scope local is bound to a value, its type
   is checked. This means that a `ClassCastException` is delivered at
@@ -133,7 +132,7 @@ to callees.
 
     Connection connectDatabase() {
         if (CREDENTIALS.get().s != "MySecret") {
-            throw new SecurityException("No dice!");
+            throw new SecurityException("No dice, kid!");
         }
         return new Connection();
     }
@@ -232,9 +231,8 @@ captures the current set of inheritable scope locals looks like this:
 In this example, the `snapshot()` operation captures the state of
 bound scope locals so that they can be retrieved by any code in the
 dynamic scope of the `submit()` method, whichever thread it's run
-on. These bound values are available for use even if the parent
-(the one that invoked `submitWithCurrentSnapshot()`) has
-terminated.
+on. These bound values are available for use even if the parent thread
+(the one that invoked `submitWithCurrentSnapshot()`) has terminated.
 
 ### Optimization
 
@@ -264,3 +262,11 @@ It is possible to emulate most of the features of scope locals with
 security, and performance. However, inheritable `ThreadLocal`s don't
 really work with thread pools, and run the risk of leaking information
 between unrelated tasks.
+
+We have experimented with a modified version of `ThreadLocal` that
+supports some of the characteristics of scope locals. However,
+carrying the additional baggage of `ThreadLocal` results in an
+implementation that is unduly burdensome, or an API that returns
+`UnsupportedOperationException` for much core functionality, or
+both. It is better, therefore, not to do that but to give scope locals
+a separate identity from thread locals.
