@@ -2,7 +2,7 @@
 
 ## Summary
 
-Enhance the Java API with scope locals, which are dynamically-scoped,
+Enhance the Java API with scope locals, which are dynamically scoped,
 effectively final, local variables. They allow a lightweight form of
 thread inheritance, which is useful in systems with many threads and
 tasks.
@@ -34,7 +34,7 @@ different thread, this approach breaks down altogether.
 We need a better way to do this.
 
 The core idea of scope locals is to support something like a "special
-variable" in Common Lisp. This is a dynamically-scoped variable, which
+variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
 terminates, the previous value (or none) is restored. We also support
 inheritance for scope locals, so that parallel constructs can set a
@@ -159,7 +159,7 @@ This "shadowing" only extends until the end of the dynamic
 scope of the lambda above.
  
 (Note: This code example assumes that `CREDENTIALS` is already bound
-to a highly-privileged set of credentials.)
+to a highly privileged set of credentials.)
 
 ### Inheritance
 
@@ -178,7 +178,7 @@ so:
 ```
 
 Whenever `Thread` instances (virtual or not) are created, the set of
-currently-bound inheritable scope locals in the parent thread is
+currently bound inheritable scope locals in the parent thread is
 automatically inherited by each child thread:
 
 ```
@@ -238,7 +238,7 @@ terminated.
 
 ### Optimization
 
-Scope locals have some strongly-defined properties. These can allow us
+Scope locals have some strongly defined properties. These can allow us
 to generate excellent code for `get()`.
 
 * The bound value of a scope local is effectively final within a
