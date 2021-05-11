@@ -149,8 +149,8 @@ local is set:
 
 ```
 
-This is a natural fit for a record when you need to share a group of
-values, for eample:
+This is a natural fit for a `record` when you need to share a group of
+values, for example:
 
 
 ```
