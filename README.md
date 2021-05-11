@@ -63,7 +63,7 @@ One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
 These parameters will be accessible within the "dynamic scope" of a
 scope local's binding operation (the set of methods invoked within the
-binding scope, and any methods invoked transitively by them.) They are
+binding scope, and any methods invoked transitively by them). They are
 guaranteed to be re-entrant &mdash; when used correctly.
 
 Scope locals can also provide us with some other nice-to-have
@@ -137,6 +137,35 @@ to callees.
         return new Connection();
     }
 ```
+
+We also provide a shortcut for the case where only a single scope
+local is set:
+
+```
+   {
+       ScopeLocal.where(x, expr1, (() -> 
+           ... code that uses x.get() ...);
+   }
+
+```
+
+This is a natural fit for a record when you need to share a group of
+values, for eample:
+
+
+```
+    record Point(int x, int y) {}
+    static final ScopeLocal<Point> position = ScopeLocal.forType(Point.class);
+
+    {
+        ScopeLocal.where(position, new Point(33, 66),
+            () -> System.out.println(position.get().x()));
+    }
+```
+
+We recommend this form when multiple values are shared with the same
+consumer because it's likely to be more efficent and it's clear to the
+reader what is intended.
 
 ### Shadowing
 
@@ -247,7 +276,8 @@ to generate excellent code for `get()`.
   local can be as fast as using a local variable.
 
 * We don't have to check the type of a scope local every time we
-  invoke `get()` because we know that its type was checked earlier.
+  invoke `get()` because we know that its type was checked earlier
+  when the scope local was bound.
   
 ### API
 
