@@ -7,6 +7,12 @@ effectively final, local variables. They allow a lightweight form of
 thread inheritance, which is useful in systems with many threads and
 tasks.
 
+ScopeLocal is in essence a redesign of `ThreadLocal` with a more
+modern approach. `ThreadLocal` offers unrestricted mutability,
+designed back when we thought mutability was a good thing.
+`ScopeLocal` restricts mutability, allowing us to reason about the
+value more precisely and optimize more effectively.
+
 ## History
 
 The need for scope locals arose from Project Loom. Loom enables a way
@@ -14,41 +20,112 @@ of Java programming where threads are not a scarce resource to be
 carefully managed by thread pools but are much more abundant, limited
 only by memory. To allow us to create large numbers of threads &mdash;
 potentially millions &mdash; we'll need to make all of the per-thread
-structures scale well. This means that as much state as possible must
-be shared between threads.
+structures scale well. Thread-local variables have a significant
+time and memory footprint when creating new threads.
 
-Thread-local variables, and in particular inheritable thread locals,
-are a pain point in the design of Loom. When a new `Thread` instance
-is created, its parent's set of inheritable thread-local variables is
-cloned. This is necessary because a thread's set of thread locals is,
-by design, mutable, so it cannot be shared. Every child thread ends up
-carrying a local copy of its parent's entire set of thread locals,
-whether the child needs them or not.
-
-Ideally we'd like to have a zero-copy operation when creating threads,
-so that inheriting context requires only the copying of a pointer from
-the creating thread (the parent) into the new thread (the child). For
-this to work, the inherited context must be effectively final.
-
-(Note: in current Java it is possible on thread creation to opt out of
-inheriting any thread-local variables, but that doesn't help if you
-really need one of them.)
+When a new `Thread` instance is created, its parent's set of
+inheritable thread-local variables is cloned. This is necessary
+because a thread's set of thread locals is, by design, mutable, so it
+cannot be shared between threads. Every child thread ends up carrying
+a local copy of its parent's entire set of thread locals, whether the
+child needs them or not.
 
 ## Motivation
 
-So you want to invoke a method `X` in a library that later calls back
+Thread-local variables are used for a wide variety of reasons in Java
+code.
+
+### Transactions of many kinds: the notion of a "current transaction".
+
+    Java Concurrency in Practice:
+
+    "... containers associate a transaction context with an executing
+    thread for the duration of an EJB call. This is easily implemented
+    using a static Thread-Local holding the transaction context: when
+    framework code needs to determine what transaction is currently
+    running, it fetches the transaction context from this
+    ThreadLocal."
+
+### Hidden parameters for callbacks
+
+You may want to invoke a method `X` in a library that later calls back
 into your code. In your callback you need some context, perhaps a
 transaction ID or some `File` instances. However, `X` provides no way
-to pass a reference through their code into your callback.  What are
-you to do? Unfortunately, you're going to have to store the context
-into what is, in effect, a global variable. A `ThreadLocal` instance
-is a slight improvement on a global variable, in that you can have
-multiple instances in a program, one per thread. However, this kind of
-usage is still not re-entrant, so if `X` in turn calls back into your
-method you'll be in trouble. And if the callback happens on a
-different thread, this approach breaks down altogether.
+to pass a reference through their code into your callback. Set a
+thread-local variable, then invoke `X`, then carefully `remove()` the
+thread-local variable.
 
-We need a better way to do this.
+### Thread locals and recursion
+
+Sometimes you want to be able to detect recursion, perhaps because a
+framework isn't re-entrant or because you want to limit recursion in
+some way, perhaps by counting invocations. A thread-local variable
+provides a way to do this: set it once, invoke a method, and test to
+see if the thread-local variable is already set. Again, you'll have to
+carefully `remove()` the thread-local variable. You'll probably need
+the thread-local variable to be a recursion counter, which you can
+`remove()` when it gets to zero. The detection of recursion is also
+useful in the case of flattened transactions: if a transaction is
+already in progress, there's no need to start a new one.
+
+### Caches for Non-thread-safe objects that are expensive to create, e.g. `SimpleDateFormat`.
+
+Some utility classes such as `SimpleDateFormat` are mutable and they
+are not thread-safe. The `SimpleDateFormat` API specification suggests
+that a new instance should be created for each thread.
+
+We'd like to support as many of these use cases as we can, but only if
+the basic properties of effective finality and re-entrancy can be
+guaranteed.
+
+## What works with scope locals and what doesn't
+
+### Transactions
+
+These will work fine, but because scope local bindings are always
+removed at the end of the scope in which they were bound, you must run
+an entire transaction from that binding scope. You won't be able to do
+this:
+
+```
+try (final Transaction transaction = new Transaction()) {
+ // Within this block, every use of Transaction.current()
+ // returns the current transaction.
+ doSomething();
+}
+```
+
+but instead you'll have to do this:
+
+```
+Transaction.run(() -> { doSomething(); });
+```
+
+### Hidden parameters for callbacks
+
+These should work fine.
+
+### Recursion
+
+This case will work fine too, but because scope locals have exactly
+the properties required, you won't need a recursion counter.
+
+### Caches for Non-thread-safe objects that are expensive to create
+
+These are problematic for scope locals, perhaps because caches are one
+of the few use cases for which thread-local variables are ideally
+suited. If you can create what you are likely to need in an outermost
+scope, that would work, but it's not ideal.
+
+### The big problem with thread-local variables: thread pools
+
+Thread-local variables don't work in any reasonable way with thread
+pools, where threads are shared between tasks. Given that thread pools
+are now the dominant way to use threads in Java, we really do need a
+way for a task which can be split over worker threads or re-started on
+a different one, an effective way of handling some of these use cases
+is needed.
+
 
 ## Description
 
