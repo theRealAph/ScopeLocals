@@ -467,15 +467,24 @@ You can do something similar with a thread-local variable, but in a
 different form:
 
 ```
-   private static final ThreadLocal<InterestingEvent> TL_CALLBACK
+    private static final ThreadLocal<InterestingEvent> TL_CALLBACK
        = new InheritableThreadLocal<>();
 
-   // ...
+    void someMethodDeepInALibrary() {
+        // ...
+        if (TL_CALLBACK.get() != null) {
+            TL_CALLBACK.get().log("Toto, I've really got a feeling we're not in Kansas any more.");
+        }
+        // ...
+    }
+
+    // ...
 
         Logger LOGGER = Logger.getLogger("My example");
+
         try {
             TL_CALLBACK.set((s) -> LOGGER.severe(s));
-            this.start();
+            this.doThings();
         } finally {
             TL_CALLBACK.remove();
         }
@@ -484,45 +493,17 @@ different form:
 Note that this isn't quite the same as the scope local example because
 it's not re-entrant: if `TL_CALLBACK` was set when this code was
 executed its setting would be lost. The closest equivalent of the
-example above would be something like
+example above might be something like
 
 ```
-    void SomeMethodDeepInALibrary() {
-        // ...
-        if (CALLBACK.isBound()) {
-            CALLBACK.get().log("Toto, I've a feeling we're not in Kansas anymore.");
-        }
-        // ...
-    }
- 
-    // ...
- 
-    static final InterestingEvent EMPTY_EVENT = new InterestingEvent() {
-        @Override
-        public void log(String s) {
-        }
-    };
-
-    private static final ThreadLocal<InterestingEvent> TL_CALLBACK
-            = InheritableThreadLocal.withInitial(() -> EMPTY_EVENT);
-
-
-    // ...
-
         var prev = TL_CALLBACK.get();
         try {
             TL_CALLBACK.set((s) -> LOGGER.severe(s));
-            this.start();
+            this.doThings();
         } finally {
-            if (prev != EMPTY_EVENT) {
-                TL_CALLBACK.set(prev);
-            } else {
-                TL_CALLBACK.remove();
-            }
+            TL_CALLBACK.set(prev);
         }
 ```
-
-
 
 ### Caches for Non-thread-safe objects that are expensive to create
 
