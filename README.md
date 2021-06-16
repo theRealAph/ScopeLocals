@@ -121,9 +121,12 @@ features, in particular:
 * **Optimization opportunities** These properties allow us to generate
   good code. In many cases a scope-local `get()` is as fast as a local
   variable.
-* **Inheritance** We also support inheritance [what?] for scope
-  locals, so that parallel constructs can set a value in the parent
-  before sub-tasks start.
+* **Inheritance** We also support inheritance for scope locals, so
+  that the bound values of inheritable scope locals are captured when
+  threads are created. There's also a snapshot mechanism for capturing
+  scope local values when other kinds of tasks are created. For
+  example, when a `Runnable` is created for submission to an
+  `ExecutorService`.
 
 ### Some examples
 
@@ -316,24 +319,24 @@ will be required to switch from thread locals to scope locals.
 
 These will work well, but because scope local bindings are always
 removed at the end of the scope in which they were bound, you must run
-an entire transaction from that binding scope. So, you won't be able
-to do this:
+an entire operation from that binding scope. So, you won't be able to
+do this:
 
 ```
-try (final Transaction transaction = new Transaction()) {
-  // Within this block, every use of Transaction.current()
-  // returns the current transaction.
-  doSomething();
+try (final DatabaseContext ctx = new DatabaseContext()) {
+  // Within this block, every use of DatabaseContext.current()
+  // returns the current context.
+  doSomething(ctx);
 }
 ```
 
-but instead you'll have to do this:
+but instead you'll have to do something like this:
 
 ```
-Transaction.run(() -> { doSomething(); });
+DatabaseContext.run(() -> doSomething());
 ```
 
-### Recursion
+### Recursion detection and counting
 
 This case will work well too, but because scope locals have exactly
 the properties required, you won't need a recursion counter to know
@@ -424,98 +427,159 @@ Where `RendererContext.call()` is defined like this:
 
 These should work well, with some code changes.
 
+Here's a simple example of using a scope local to add
+context-sensitive logging to an application. Let's assume that you
+want to log some events, but only for certain places when your
+application is running.
+
+First, declare an interface that is invoked when an interesting event
+occurs, and a `ScopeLocal` instance that will refer to one:
+
+```
+    interface InterestingEvent {
+        public void log(String s);
+    }
+    private static final ScopeLocal<InterestingEvent> CALLBACK = ScopeLocal.forType(InterestingEvent.class);
+```
+
+In your application code, look to see if `CALLBACK` is bound in this
+scope, and if it is, call its `log()` method:
+
+```
+    void SomeMethodDeepInALibrary() {
+        // ...
+        if (CALLBACK.isBound()) {
+            CALLBACK.get().log("Toto, I've a feeling we're not in Kansas anymore.");
+        }
+        // ...
+    }
+```
+
+And when you want to do some logging, bind `CALLBACK` to do whatever
+you want:
+
+```
+        Logger LOGGER = Logger.getLogger("My example");
+        ScopeLocal.where(CALLBACK, (s) -> LOGGER.severe(s)).run(this::start);
+```
+
+You can do something similar with a thread-local variable, but in a
+different form:
+
+```
+   private static final ThreadLocal<InterestingEvent> TL_CALLBACK
+       = new InheritableThreadLocal<>();
+
+   // ...
+
+        Logger LOGGER = Logger.getLogger("My example");
+        try {
+            TL_CALLBACK.set((s) -> LOGGER.severe(s));
+            this.start();
+        } finally {
+            TL_CALLBACK.remove();
+        }
+```
+
+Note that this isn't quite the same as the scope local example because
+it's not re-entrant: if `TL_CALLBACK` was set when this code was
+executed its setting would be lost. The closest equivalent of the
+example above would be something like
+
+```
+    void SomeMethodDeepInALibrary() {
+        // ...
+        if (CALLBACK.isBound()) {
+            CALLBACK.get().log("Toto, I've a feeling we're not in Kansas anymore.");
+        }
+        // ...
+    }
+ 
+    // ...
+ 
+    static final InterestingEvent EMPTY_EVENT = new InterestingEvent() {
+        @Override
+        public void log(String s) {
+        }
+    };
+
+    private static final ThreadLocal<InterestingEvent> TL_CALLBACK
+            = InheritableThreadLocal.withInitial(() -> EMPTY_EVENT);
+
+
+    // ...
+
+        var prev = TL_CALLBACK.get();
+        try {
+            TL_CALLBACK.set((s) -> LOGGER.severe(s));
+            this.start();
+        } finally {
+            if (prev != EMPTY_EVENT) {
+                TL_CALLBACK.set(prev);
+            } else {
+                TL_CALLBACK.remove();
+            }
+        }
+```
+
+
+
 ### Caches for Non-thread-safe objects that are expensive to create
 
 These are problematic for scope locals, perhaps because caches are one
 of the few use cases for which thread-local variables are ideally
 suited. If you can create caches you are likely to need in an
 outermost scope that would work, but scope local is not
-ideal. However, it can usefully be done: see the Fibonacci example
-below.
+ideal
 
 ### Hidden return values
 
 This isn't difficult to do with scope locals: create an empty instance
 of a container class in the outer scope, call some method, and the
-callee method `set()`s the value in the container.
+callee method `set()`s the value in the container. However, while it's
+pretty obvious how it do this, it's rather evil.
 
-### A big problem for thread-local variables: thread pools
+### Thread pools 
 
 Thread-local variables don't work in any reasonable way with thread
 pools, where threads are shared between tasks and tasks are sometimes
 migrated from one thread to another.
 
 Given that thread pools are now (becoming?) the dominant way to use
-threads in Java, we need something that works for a task which can be
-split over worker threads or re-started on a different one. Scope
-locals work very well in such cases because `ScopeLocal.snapshot()`
-can be used when creating a task, and `ScopeLocal.snapshot()`, because
-it just copies a pointer, has very overhead in time and space.
+threads in Java, it would be useful to have something like thread
+locals but works for a task which can be split over worker threads or
+re-started on a different one. 
 
-Here's a complete example that calculates Fibonacci numbers. A
-`ConcurrentHashMap` is used to cache values across several worker
-threads.
-
+This example creates a task that captures a snapshot of the currently-
+bound inheritable scope locals and binds them when it is run:
 
 ```
-import java.util.concurrent.*;
-import static java.lang.ScopeLocal.*;
+    private static final ScopeLocal<InterestingEvent> CALLBACK
+            = ScopeLocal.inheritableForType(InterestingEvent.class);
 
-class Fib extends RecursiveAction {
-
-    static final ScopeLocal<ConcurrentHashMap<Long, Long>> RESULTS
-            = ScopeLocal.inheritableForType(ConcurrentHashMap.class);
-
-    long number;
-    long getAnswer() {
-        return number;
-    }
-
-    Fib(long n) { number = n; }
-
-    void fib() {
-        long n = number;
-        if (n == 0) number = 0;
-        else if (n == 1) number = 1;
-        else {
-            Fib f1 = new Fib(n - 1);
-            Fib f2 = new Fib(n - 2);
-            invokeAll(f1, f2);
-            number = f1.number + f2.number;
+    public class TaskWithSnapshot implements Runnable {
+        ScopeLocal.Snapshot snapshot = ScopeLocal.snapshot();
+        public void run() {
+            snapshot.run(() -> {
+                if (CALLBACK.isBound()) {
+                    CALLBACK.get().log("Dave, my mind is going.");
+                }
+            });
         }
     }
-
-    public final void fibWithCache() {
-        var cache = RESULTS.get();
-        long n = number;
-        var i = cache.get(n);
-        if (i != null) {
-            number = i;
-            return;
-        }
-        fib();
-        cache.putIfAbsent(n, number);
-    }
-
-    private final Snapshot snapshot = ScopeLocal.snapshot();
-
-    @Override
-    public final void compute() {
-        snapshot.run(this::fibWithCache);
-    }
-}
-
-public class Fibber {
-    public static void main(String[] args) {
-        ScopeLocal.where(Fib.RESULTS, new ConcurrentHashMap<>(),
-                () -> {
-                    var fib = new Fib(90);
-                    ForkJoinPool.commonPool().invoke(fib);
-                    System.out.println(fib.getAnswer());
-                });
-    }
-}
 ```
+
+and this binds `CALLBACK` to an `InterestingEvent` and submits the
+task:
+
+```
+        ExecutorService executor = ForkJoinPool.commonPool();
+        ScopeLocal.where(CALLBACK, (s) -> LOGGER.severe(s))
+                .run(() -> executor.submit(new TaskWithSnapshot()));
+```
+
+This is a somewhat unrealistic example for the same of brevity. In
+practice the control flow would be much more complex.
 
 ### Optimization
 
