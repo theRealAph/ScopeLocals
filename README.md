@@ -22,6 +22,10 @@ doesn't attempt to replace, for example, try-with-resources. It
 doesn't perform cleanup operations when a scope ends, and isn't
 related to a C++-style destructor.
 
+Scope locals necessarily don't support all of the usage patterns of
+thread locals. It is not a goal to replace existing usages of
+thread-local variables without code changes.
+
 ## Motivation
 
 In order to explain the motivation for scope locals, we'll first try
@@ -54,7 +58,7 @@ The detection of recursion is also useful in the case of flattened
 transactions: any transaction started when a transaction in progress
 becomes part of the outermost transaction.
 
-### Transactions of many kinds: the notion of a "current transaction".
+### Contexts of many kinds: the notion of a "current context".
 
     Java Concurrency in Practice:
 
@@ -64,6 +68,8 @@ becomes part of the outermost transaction.
     framework code needs to determine what transaction is currently
     running, it fetches the transaction context from this
     ThreadLocal."
+
+Another example occurs in graphics, where there is a drawing context.
 
 ### Caches for Non-thread-safe objects that are expensive to create, e.g. `SimpleDateFormat`.
 
@@ -89,9 +95,7 @@ guaranteed.
 The core idea of scope locals is to support something like a "special
 variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
-terminates, the previous value (or none) is restored. We also support
-inheritance for scope locals, so that parallel constructs can set a
-value in the parent before sub-tasks start.
+terminates, the previous value (or none) is restored. 
 
 One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
@@ -117,6 +121,9 @@ features, in particular:
 * **Optimization opportunities** These properties allow us to generate
   good code. In many cases a scope-local `get()` is as fast as a local
   variable.
+* **Inheritance** We also support inheritance [what?] for scope
+  locals, so that parallel constructs can set a value in the parent
+  before sub-tasks start.
 
 ### Some examples
 
@@ -188,12 +195,13 @@ values, for example:
 
 
 ```
-    record Point(int x, int y) {}
-    static final ScopeLocal<Point> position = ScopeLocal.forType(Point.class);
+    record Credentials(int userId, String password) {}
+    static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.forType(Credentials.class);
 
     {
-        ScopeLocal.where(position, new Point(33, 66),
-            () -> System.out.println(position.get().x()));
+        ScopeLocal.where(position,
+            new Credentials(userDB.getCurrentUID(), console.askForPassword()),
+                ... code that, somewhere deep, uses CREDENTIALS to connect ... ;
     }
 ```
 
@@ -297,14 +305,14 @@ dynamic scope of the `submit()` method, whichever thread it's run
 on. These bound values are available for use even if the parent thread
 (the one that invoked `submitWithCurrentSnapshot()`) has terminated.
 
-## What works with scope locals &mdash and what doesn't
+## What works with scope locals &mdash; and what doesn't
 
 Because scope locals have a well-defined extent, the block in which
 they were bound or inherited, they can never be syntactically
 compatible with thread-local variables. Therefore, some code changes
-will be rquired to switch from thread locals to scope locals.
+will be required to switch from thread locals to scope locals.
 
-### Transactions
+### Contexts
 
 These will work well, but because scope local bindings are always
 removed at the end of the scope in which they were bound, you must run
@@ -325,22 +333,105 @@ but instead you'll have to do this:
 Transaction.run(() -> { doSomething(); });
 ```
 
-### Hidden parameters for callbacks
-
-These should work well, with some code changes.
-
 ### Recursion
 
 This case will work well too, but because scope locals have exactly
 the properties required, you won't need a recursion counter to know
 when to `remove()` the binding.
 
+The following is an example that combines recursion detection and a
+current context.
+
+Firstly, `ThreadLocal` style:
+
+```
+    public final RendererContext getRendererContext() {
+        // ctxTL is a thread-local variable that contains a context
+        RendererContext ctx = ctxTL.get();
+        if (ref != null) {
+            // Check reentrance:
+            if (ctx.usage == USAGE_TL_INACTIVE) {
+               ctx.usage = USAGE_TL_IN_USE;
+               return ctx;
+            }
+        }
+        ctx = newContext();
+        ctxTL.set(ctx);
+        return ctx;
+    }
+
+   // called from here ...
+
+    final RendererContext rdrCtx = getRendererContext();
+    try {
+        final Path2D.Double p2d = rdrCtx.getPath2D();
+        strokeTo(rdrCtx, p2d, ...);
+        return new Path2D.Double(p2d);
+    } catch {
+        ...
+    } finally {
+        // recycle the RendererContext instance
+        returnRendererContext(rdrCtx);
+    }
+```
+
+might turn into something like this with scope locals:
+
+```
+    public final RendererContext getRendererContext() {
+        // ctxSL is a scope local that refers to a context
+        if (if ctxSL.isBound()) {
+            RendererContext ctx = ctxSL.get();
+            // Check reentrance:
+            if (ctx.usage == USAGE_TL_INACTIVE) {
+               ctx.usage = USAGE_TL_IN_USE;
+               return ctx;
+            }
+        }
+        return newContext();
+    }
+
+
+   // called from here ...
+
+    final RendererContext rdrCtx = getRendererContext();
+    try {
+        return rdCtx.call( () -> {
+            final Path2D.Double p2d = rdrCtx.getPath2D();
+            strokeTo(rdrCtx, p2d, ...);
+            return new Path2D.Double(p2d);
+        });
+     } catch {
+         ...
+     } finally {
+        // recycle the RendererContext instance
+        returnRendererContext(rdrCtx);
+     }
+
+    ```
+    
+Where `RendererContext.call()` is defined like this:     
+    
+    ```
+
+    // Call r with ctxSL bound to this RendererContext
+    T call(Callable<T> r) throws Exception {
+        return ScopeLocal.where(ctxSL, this).call(r);
+    }
+```
+
+### Hidden parameters for callbacks
+
+These should work well, with some code changes.
+
 ### Caches for Non-thread-safe objects that are expensive to create
 
 These are problematic for scope locals, perhaps because caches are one
 of the few use cases for which thread-local variables are ideally
 suited. If you can create caches you are likely to need in an
-outermost scope that would work, but scope local is not ideal.
+outermost scope that would work, but scope local is not
+ideal. However, it can usefully be done: see the Fibonacci example
+below.
 
 ### Hidden return values
 
@@ -348,7 +439,7 @@ This isn't difficult to do with scope locals: create an empty instance
 of a container class in the outer scope, call some method, and the
 callee method `set()`s the value in the container.
 
-### A big problem with thread-local variables: thread pools
+### A big problem for thread-local variables: thread pools
 
 Thread-local variables don't work in any reasonable way with thread
 pools, where threads are shared between tasks and tasks are sometimes
@@ -357,7 +448,74 @@ migrated from one thread to another.
 Given that thread pools are now (becoming?) the dominant way to use
 threads in Java, we need something that works for a task which can be
 split over worker threads or re-started on a different one. Scope
-locals work very well in such cases.
+locals work very well in such cases because `ScopeLocal.snapshot()`
+can be used when creating a task, and `ScopeLocal.snapshot()`, because
+it just copies a pointer, has very overhead in time and space.
+
+Here's a complete example that calculates Fibonacci numbers. A
+`ConcurrentHashMap` is used to cache values across several worker
+threads.
+
+
+```
+import java.util.concurrent.*;
+import static java.lang.ScopeLocal.*;
+
+class Fib extends RecursiveAction {
+
+    static final ScopeLocal<ConcurrentHashMap<Long, Long>> RESULTS
+            = ScopeLocal.inheritableForType(ConcurrentHashMap.class);
+
+    long number;
+    long getAnswer() {
+        return number;
+    }
+
+    Fib(long n) { number = n; }
+
+    void fib() {
+        long n = number;
+        if (n == 0) number = 0;
+        else if (n == 1) number = 1;
+        else {
+            Fib f1 = new Fib(n - 1);
+            Fib f2 = new Fib(n - 2);
+            invokeAll(f1, f2);
+            number = f1.number + f2.number;
+        }
+    }
+
+    public final void fibWithCache() {
+        var cache = RESULTS.get();
+        long n = number;
+        var i = cache.get(n);
+        if (i != null) {
+            number = i;
+            return;
+        }
+        fib();
+        cache.putIfAbsent(n, number);
+    }
+
+    private final Snapshot snapshot = ScopeLocal.snapshot();
+
+    @Override
+    public final void compute() {
+        snapshot.run(this::fibWithCache);
+    }
+}
+
+public class Fibber {
+    public static void main(String[] args) {
+        ScopeLocal.where(Fib.RESULTS, new ConcurrentHashMap<>(),
+                () -> {
+                    var fib = new Fib(90);
+                    ForkJoinPool.commonPool().invoke(fib);
+                    System.out.println(fib.getAnswer());
+                });
+    }
+}
+```
 
 ### Optimization
 
