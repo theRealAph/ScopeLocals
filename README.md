@@ -23,8 +23,9 @@ doesn't perform cleanup operations when a scope ends, and isn't
 related to a C++-style destructor.
 
 Scope locals necessarily don't support all of the usage patterns of
-thread locals. It is not a goal to replace existing usages of
-thread-local variables without code changes.
+thread locals, so thread locals may still be useful for some
+things. It is not a goal to replace existing usages of thread-local
+variables without code changes.
 
 ## Motivation
 
@@ -315,6 +316,11 @@ they were bound or inherited, they can never be syntactically
 compatible with thread-local variables. Therefore, some code changes
 will be required to switch from thread locals to scope locals.
 
+Please note that these are simple examples for the sake of brevity. In
+some cases a simple refactoring would make the use of scope locals
+unnecessary, but that would be far more difficult in a more complex
+scenario with multiple libraries of separate authorship.
+
 ### Contexts
 
 These will work well, but because scope local bindings are always
@@ -335,6 +341,9 @@ but instead you'll have to do something like this:
 ```
 DatabaseContext.run(() -> doSomething());
 ```
+
+that is to say, run an entire operation in the outer scope of teh
+scope local binding.
 
 ### Recursion detection and counting
 
@@ -432,61 +441,55 @@ context-sensitive logging to an application. Let's assume that you
 want to log some events, but only for certain places when your
 application is running.
 
-First, declare an interface that is invoked when an interesting event
+First, declare an interface that is invoked when a loggable event
 occurs, and a `ScopeLocal` instance that will refer to one:
 
 ```
-    interface InterestingEvent {
+    interface MyLogger {
         public void log(String s);
     }
-    private static final ScopeLocal<InterestingEvent> CALLBACK = ScopeLocal.forType(InterestingEvent.class);
+    private static final ScopeLocal<MyLogger> SL_LOGGER
+            = ScopeLocal.inheritableForType(MyLogger.class);
 ```
 
-In your application code, look to see if `CALLBACK` is bound in this
-scope, and if it is, call its `log()` method:
+In your application code, call `SL_LOGGER`'s `log()` method:
 
 ```
-    void SomeMethodDeepInALibrary() {
+    void someMethodDeepInALibrary() {
         // ...
-        if (CALLBACK.isBound()) {
-            CALLBACK.get().log("Toto, I've a feeling we're not in Kansas anymore.");
-        }
-        // ...
-    }
+        SL_LOGGER.orElse(NULL_LOGGER).log("Here's looking at you, kid.");
 ```
 
-And when you want to do some logging, bind `CALLBACK` to do whatever
+And when you want to do some logging, bind `SL_LOGGER` to do whatever
 you want:
 
 ```
-        Logger LOGGER = Logger.getLogger("My example");
-        ScopeLocal.where(CALLBACK, (s) -> LOGGER.severe(s)).run(this::start);
+        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s)).run(this::exec);
 ```
 
 You can do something similar with a thread-local variable, but in a
 different form:
 
 ```
-    private static final ThreadLocal<InterestingEvent> TL_CALLBACK
-       = new InheritableThreadLocal<>();
+    interface MyLogger {
+        public void log(String s);
+    }
+    private static final ThreadLocal<MyLogger> TL_LOGGER
+            = ThreadLocal.withInitial(() -> NULL_LOGGER);
 
     void someMethodDeepInALibrary() {
         // ...
-        if (TL_CALLBACK.get() != null) {
-            TL_CALLBACK.get().log("Toto, I've really got a feeling we're not in Kansas any more.");
-        }
+        TL_LOGGER.get().log("Toto, I've really got a feeling we're not in Kansas any more.");
         // ...
     }
 
-    // ...
-
-        Logger LOGGER = Logger.getLogger("My example");
+    // ... called from
 
         try {
-            TL_CALLBACK.set((s) -> LOGGER.severe(s));
-            this.doThings();
+            TL_LOGGER.set((s) -> LOGGER.severe(s));
+            this.exec();
         } finally {
-            TL_CALLBACK.remove();
+            TL_LOGGER.set(NULL_LOGGER);
         }
 ```
 
@@ -496,12 +499,12 @@ executed its setting would be lost. The closest equivalent of the
 example above might be something like
 
 ```
-        var prev = TL_CALLBACK.get();
+        var prev = TL_LOGGER.get();
         try {
-            TL_CALLBACK.set((s) -> LOGGER.severe(s));
-            this.doThings();
+            TL_LOGGER.set((s) -> LOGGER.severe(s));
+            this.exec();
         } finally {
-            TL_CALLBACK.set(prev);
+            TL_LOGGER.set(prev);
         }
 ```
 
@@ -535,27 +538,29 @@ This example creates a task that captures a snapshot of the currently-
 bound inheritable scope locals and binds them when it is run:
 
 ```
-    private static final ScopeLocal<InterestingEvent> CALLBACK
-            = ScopeLocal.inheritableForType(InterestingEvent.class);
+    public class Task implements Runnable {
+        public void run() {
+            // ...
+            SL_LOGGER.orElse(NULL_LOGGER).log("Dave, my mind is going.");
+        }
+    }
 
-    public class TaskWithSnapshot implements Runnable {
+    // This wrapper class extends a Runnable, capturing a Snapsot
+    // at creation time.
+    public class TaskWithSnapshot extends Task {
         ScopeLocal.Snapshot snapshot = ScopeLocal.snapshot();
         public void run() {
-            snapshot.run(() -> {
-                if (CALLBACK.isBound()) {
-                    CALLBACK.get().log("Dave, my mind is going.");
-                }
-            });
+            snapshot.run(super::run);
         }
     }
 ```
 
-and this binds `CALLBACK` to an `InterestingEvent` and submits the
+and this binds `SL_LOGGER` to a `Logger` and submits the
 task:
 
 ```
         ExecutorService executor = ForkJoinPool.commonPool();
-        ScopeLocal.where(CALLBACK, (s) -> LOGGER.severe(s))
+        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s))
                 .run(() -> executor.submit(new TaskWithSnapshot()));
 ```
 
