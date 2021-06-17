@@ -312,9 +312,10 @@ on. These bound values are available for use even if the parent thread
 ## What works with scope locals &mdash; and what doesn't
 
 Because scope locals have a well-defined extent, the block in which
-they were bound or inherited, they can never be syntactically
-compatible with thread-local variables. Therefore, some code changes
-will be required to switch from thread locals to scope locals.
+they were bound or inherited, they can never be syntactically (or even
+structurally) compatible with thread-local variables. Therefore, some
+code changes will be required to switch from thread locals to scope
+locals.
 
 Please note that these are simple examples for the sake of brevity. In
 some cases a simple refactoring would make the use of scope locals
@@ -420,11 +421,11 @@ might turn into something like this with scope locals:
         returnRendererContext(rdrCtx);
      }
 
-    ```
+```
     
-Where `RendererContext.call()` is defined like this:     
+Where `RendererContext.call()` is defined like this:
     
-    ```
+```
 
     // Call r with ctxSL bound to this RendererContext
     T call(Callable<T> r) throws Exception {
@@ -479,7 +480,7 @@ different form:
 
     void someMethodDeepInALibrary() {
         // ...
-        TL_LOGGER.get().log("Toto, I've really got a feeling we're not in Kansas any more.");
+        TL_LOGGER.get().log("Toto, I've a feeling we're not in Kansas any more.");
         // ...
     }
 
@@ -545,12 +546,12 @@ bound inheritable scope locals and binds them when it is run:
         }
     }
 
-    // This wrapper class extends a Runnable, capturing a Snapsot
-    // at creation time.
-    public class TaskWithSnapshot extends Task {
-        ScopeLocal.Snapshot snapshot = ScopeLocal.snapshot();
+    public class TaskWithSnapshot implements Runnable {
+        private final Runnable runnable;
+        private final ScopeLocal.Snapshot snapshot = ScopeLocal.snapshot();
+        TaskWithSnapshot(Runnable r) { this.runnable = r; }
         public void run() {
-            snapshot.run(super::run);
+            snapshot.run(runnable::run);
         }
     }
 ```
@@ -561,8 +562,11 @@ task:
 ```
         ExecutorService executor = ForkJoinPool.commonPool();
         ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s))
-                .run(() -> executor.submit(new TaskWithSnapshot()));
+                .run(() -> executor.submit(new TaskWithSnapshot(new Task())));
 ```
+
+There is perhaps scope for a version of
+`ExecutorService.submit(Runnable)` that captures a snaphsot.
 
 This is a somewhat unrealistic example for the same of brevity. In
 practice the control flow would be much more complex.
