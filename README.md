@@ -235,6 +235,12 @@ scope of the lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
+## Inheritance
+
+We intend to support inheritance of scope local bindings by some subtasks,
+in particular `Thread` instances in a Structured Concurrency context, but
+the API is not yet stable.
+
 ## What works with scope locals &mdash; and what doesn't
 
 Because scope locals have a well-defined extent, the block in which
