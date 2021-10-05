@@ -235,84 +235,10 @@ scope of the lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-### Inheritance
-
-In our example above that uses a scope local to make credentials
-available to callees, the callback is run on the same thread as the
-caller. However, sometimes a method decomposes a task into several
-parallel sub-tasks, but we still need to share some attributes with
-them. For that we use scope-local inheritance.
-
-Scope locals are either inheritable or non-inheritable. The
-inheritability of a scope local is determined by its definition, like
-so:
-
-```
-  static final ScopeLocal<MyType> x = ScopeLocal.inheritableForType(MyType.class);
-```
-
-Whenever `Thread` instances (virtual or not) are created, the set of
-currently bound inheritable scope locals in the parent thread is
-automatically inherited by each child thread:
-
-```
-    private static final ScopeLocal<Credentials> CREDENTIALS 
-        = ScopeLocal.inheritableForType(Credentials.class);
-
-    void multipleThreadExample() {
-        Credentials creds = new Credentials("MySecret");
-        ScopeLocal.where(CREDENTIALS, creds).run(() -> {
-            for (int i = 0; i < 10; i++) {
-                virtualThreadExecutor.submit(() -> {
-                    // ...
-                    Connection connection = connectDatabase();
-                    // ...
-                });
-            }
-        });
-    }
-```
-
-(Implementation note: The scope-local credentials in this example are
-not copied into each child thread. Instead, a reference to an
-immutable set of scope-local bindings is passed to the child.)
-
-Inheritable scope locals are also inherited by operations in a
-parallel stream:
-
-```
-    void parallelStreamExample() {
-        Credentials creds = new Credentials("MySecret");
-        ScopeLocal.where(CREDENTIALS, creds).run(() -> {
-            persons.parallelStream().forEach((Person p) -> connectDatabase().append(p));
-        });
-    }
-```
-
-In addition, a `Snapshot()` operation that captures the current set
-of inheritable scope locals is provided. This allows context
-information to be shared with asynchronous computations.
-
-For example, a version of `ExecutorService.submit(Callable c)` that
-captures the current set of inheritable scope locals looks like this:
-
-```
-    public <V> Future<V> submitWithCurrentSnapshot(ExecutorService executor, Callable<V> aCallable) {
-        var s = ScopeLocal.snapshot();
-        return executor.submit(() -> s.call(aCallable));
-    }
-```
-
-In this example, the `snapshot()` operation captures the state of
-bound scope locals so that they can be retrieved by any code in the
-dynamic scope of the `submit()` method, whichever thread it's run
-on. These bound values are available for use even if the parent thread
-(the one that invoked `submitWithCurrentSnapshot()`) has terminated.
-
 ## What works with scope locals &mdash; and what doesn't
 
 Because scope locals have a well-defined extent, the block in which
-they were bound or inherited, they can never be syntactically (or even
+they were bound, they can never be syntactically (or even
 structurally) compatible with thread-local variables. Therefore, some
 code changes will be required to switch from thread locals to scope
 locals.
@@ -343,7 +269,7 @@ but instead you'll have to do something like this:
 DatabaseContext.run(() -> doSomething());
 ```
 
-that is to say, run an entire operation in the outer scope of teh
+that is to say, run an entire operation in the outer scope of the
 scope local binding.
 
 ### Recursion detection and counting
@@ -515,7 +441,7 @@ These are problematic for scope locals, perhaps because caches are one
 of the few use cases for which thread-local variables are ideally
 suited. If you can create caches you are likely to need in an
 outermost scope that would work, but scope local is not
-ideal
+ideal for this.
 
 ### Hidden return values
 
@@ -523,53 +449,6 @@ This isn't difficult to do with scope locals: create an empty instance
 of a container class in the outer scope, call some method, and the
 callee method `set()`s the value in the container. However, while it's
 pretty obvious how it do this, it's rather evil.
-
-### Thread pools 
-
-Thread-local variables don't work in any reasonable way with thread
-pools, where threads are shared between tasks and tasks are sometimes
-migrated from one thread to another.
-
-Given that thread pools are now (becoming?) the dominant way to use
-threads in Java, it would be useful to have something like thread
-locals but works for a task which can be split over worker threads or
-re-started on a different one. 
-
-This example creates a task that captures a snapshot of the currently-
-bound inheritable scope locals and binds them when it is run:
-
-```
-    public class Task implements Runnable {
-        public void run() {
-            // ...
-            SL_LOGGER.orElse(NULL_LOGGER).log("Dave, my mind is going.");
-        }
-    }
-
-    public class TaskWithSnapshot implements Runnable {
-        private final Runnable runnable;
-        private final ScopeLocal.Snapshot snapshot = ScopeLocal.snapshot();
-        TaskWithSnapshot(Runnable r) { this.runnable = r; }
-        public void run() {
-            snapshot.run(runnable::run);
-        }
-    }
-```
-
-and this binds `SL_LOGGER` to a `Logger` and submits the
-task:
-
-```
-        ExecutorService executor = ForkJoinPool.commonPool();
-        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s))
-                .run(() -> executor.submit(new TaskWithSnapshot(new Task())));
-```
-
-There is perhaps scope for a version of
-`ExecutorService.submit(Runnable)` that captures a snaphsot.
-
-This is a somewhat unrealistic example for the same of brevity. In
-practice the control flow would be much more complex.
 
 ### Optimization
 
