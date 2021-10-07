@@ -124,6 +124,8 @@ features, in particular:
 
 ### Some examples
 
+Please note that these examples are necesarily simple: 
+
 ```
   // Declare scope locals x and y
   static final ScopeLocal<MyType> x = ScopeLocal.newInstance();
