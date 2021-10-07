@@ -41,9 +41,9 @@ into your code. In your callback you need some context, perhaps a
 transaction ID or some `File` instances. However, `X` provides no way
 to pass a reference through their code into your callback. Set a
 thread-local variable, then invoke `X`, then carefully `remove()` the
-thread-local variable. This isn't ideal beacuse it's not at all
-re-entrant: thread locals are more or less thread-confined global
-variables.
+thread-local variable. This usage isn't ideal for thread locals because it's not at all
+re-entrant: if `X` is called again via your callback, it'll overwrite your already-set thread-local variabl.
+Thread locals are more or less thread-confined global variables.
 
 ### Thread locals and recursion
 
@@ -96,7 +96,8 @@ guaranteed.
 The core idea of scope locals is to support something like a "special
 variable" in Common Lisp. This is a dynamically scoped variable, which
 acquires a value on entry to a lexical scope; when that scope
-terminates, the previous value (or none) is restored. 
+terminates, the previous value (or none) is restored. However, we
+don't want our scope locals to have a `set()` method.
 
 One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
@@ -114,27 +115,19 @@ features, in particular:
 * **Well-defined extent** A scope local is bound to a value at the start
   of a scope and its previous value (or none) is always restored at
   the end.
-* **Strong typing** Whenever a scope local is bound to a value, its type
-  is checked. This means that a `ClassCastException` is delivered at
-  the point an error was made rather than later. Also, there are
-  usually more invocations of `get()` than there are binding
-  operations, so it makes sense to do the check early.
 * **Optimization opportunities** These properties allow us to generate
   good code. In many cases a scope-local `get()` is as fast as a local
   variable.
-* **Inheritance** We also support inheritance for scope locals, so
+* **Inheritance** We also intend to support inheritance for scope locals, so
   that the bound values of inheritable scope locals are captured when
-  threads are created. There's also a snapshot mechanism for capturing
-  scope local values when other kinds of tasks are created. For
-  example, when a `Runnable` is created for submission to an
-  `ExecutorService`.
+  threads are created in some contexts. 
 
 ### Some examples
 
 ```
   // Declare scope locals x and y
-  static final ScopeLocal<MyType> x = ScopeLocal.forType(MyType.class);
-  static final ScopeLocal<MyType> y = ScopeLocal.forType(MyType.class);
+  static final ScopeLocal<MyType> x = ScopeLocal.newInstance();
+  static final ScopeLocal<MyType> y = ScopeLocal.newInstance();
 
   {
     ScopeLocal.where(x, expr1)
@@ -151,12 +144,7 @@ and any methods called by them, comprise the dynamic scope of `run()`.
 Because scope locals are effectively final, there is no equivalent of
 the `ThreadLocal.set()` method.
 
-(Note 1: the declarations of scope locals `x` and `y` have an explicit
-type parameter. This allows us to make a strong guarantee that if any
-attempt is made to bind an object of the wrong type to a scope local
-we'll immediately throw a ClassCastException.)
-
-(Note 2: `x` and `y` have the usual Java access modifiers. Even though
+(Note: `x` and `y` have the usual Java access modifiers. Even though
 a scope local is implicitly passed to every method in its dynamic
 scope, a method will only be able to use `get()` if that scope local's
 name is accessible to the method. So, sensitive security information
@@ -239,7 +227,7 @@ to a highly privileged set of credentials.)
 
 We intend to support inheritance of scope local bindings by some subtasks,
 in particular `Thread` instances in a Structured Concurrency context, but
-the API is not yet stable.
+the design of the API is not yet finalized.
 
 ## What works with scope locals &mdash; and what doesn't
 
@@ -259,7 +247,8 @@ scenario with multiple libraries of separate authorship.
 These will work well, but because scope local bindings are always
 removed at the end of the scope in which they were bound, you must run
 an entire operation from that binding scope. So, you won't be able to
-do this:
+do something like this example, which has a `ThreadLocal` embedded in
+a `DatabaseContext`:
 
 ```
 try (final DatabaseContext ctx = new DatabaseContext()) {
@@ -269,7 +258,7 @@ try (final DatabaseContext ctx = new DatabaseContext()) {
 }
 ```
 
-but instead you'll have to do something like this:
+instead you'll have to do something like this, where `DatabaseContext.run()` binds a thread local then calls a lambda:
 
 ```
 DatabaseContext.run(() -> doSomething());
