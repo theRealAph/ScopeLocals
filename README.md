@@ -17,7 +17,7 @@ tasks that run in thread pools.
 
 ## Non-Goals
 
-This JEP is only concerned with associating names and values. It
+This JEP is only concerned with associating local names and values. It
 doesn't attempt to replace, for example, try-with-resources. It
 doesn't perform cleanup operations when a scope ends, and isn't
 related to a C++-style destructor.
@@ -30,7 +30,7 @@ variables without code changes.
 ## Motivation
 
 In order to explain the motivation for scope locals, we'll first try
-to enumerate the ways that thread locals are used. Later, in the "What
+to enumerate the ways that thread locals are used today. Later, in the "What
 works with scope locals" section, we'll discuss how well these uses
 are supported by scope locals.
 
@@ -42,8 +42,8 @@ transaction ID or some `File` instances. However, `X` provides no way
 to pass a reference through their code into your callback. Set a
 thread-local variable, then invoke `X`, then carefully `remove()` the
 thread-local variable. This usage isn't ideal for thread locals because it's not at all
-re-entrant: if `X` is called again via your callback, it'll overwrite your already-set thread-local variabl.
-Thread locals are more or less thread-confined global variables.
+re-entrant: if `X` is recursively called via your callback, it'll overwrite your already-set thread-local variable.
+Thread locals are, more or less, thread-confined global variables.
 
 ### Thread locals and recursion
 
@@ -106,7 +106,7 @@ scope local's binding operation (the set of methods invoked within the
 binding scope, and any methods invoked transitively by them). They are
 guaranteed to be re-entrant &mdash; when used correctly.
 
-Scope locals can also provide us with some other nice-to-have
+Scope locals provide us with some other nice-to-have
 features, in particular:
 
 * **Effective finality** The value bound to a scope local cannot
@@ -120,11 +120,15 @@ features, in particular:
   variable.
 * **Inheritance** We also intend to support inheritance for scope locals, so
   that the bound values of inheritable scope locals are captured when
-  threads are created in some contexts. 
+  threads are created, in some contexts. 
 
 ### Some examples
 
-Please note that these examples are necesarily simple: 
+Please note that these examples are necesarily simple, and in
+many cases you wouldn't need a thread local or a scope local.
+You are invited to imagine a complex system, with many intervening
+method calls, between the point where a scope local is bound to a
+value and the point where that value is retrieved.
 
 ```
   // Declare scope locals x and y
@@ -239,7 +243,7 @@ structurally) compatible with thread-local variables. Therefore, some
 code changes will be required to switch from thread locals to scope
 locals.
 
-Please note that these are simple examples for the sake of brevity. In
+Please note that, for the sake of brevity, these are simple examples. In
 some cases a simple refactoring would make the use of scope locals
 unnecessary, but that would be far more difficult in a more complex
 scenario with multiple libraries of separate authorship.
@@ -373,7 +377,7 @@ occurs, and a `ScopeLocal` instance that will refer to one:
         public void log(String s);
     }
     private static final ScopeLocal<MyLogger> SL_LOGGER
-            = ScopeLocal.inheritableForType(MyLogger.class);
+            = ScopeLocal.newInstance(MyLogger.class);
 ```
 
 In your application code, call `SL_LOGGER`'s `log()` method:
@@ -419,8 +423,8 @@ different form:
 
 Note that this isn't quite the same as the scope local example because
 it's not re-entrant: if `TL_CALLBACK` was set when this code was
-executed its setting would be lost. The closest equivalent of the
-example above might be something like
+executed its setting would be lost. The closest thread-local equivalent of the
+scope-local example above might be something like
 
 ```
         var prev = TL_LOGGER.get();
@@ -437,8 +441,7 @@ example above might be something like
 These are problematic for scope locals, perhaps because caches are one
 of the few use cases for which thread-local variables are ideally
 suited. If you can create caches you are likely to need in an
-outermost scope that would work, but scope local is not
-ideal for this.
+outermost scope that would work, but it requires some structural changes.
 
 ### Hidden return values
 
@@ -458,19 +461,10 @@ to generate excellent code for `get()` and inheritance.
   restored. For that reason, we can hoist the value of a scope local
   into a register at the start of a method. Repeated uses of a scope
   local can be as fast as using a local variable.
-
-* We don't have to check the type of a scope local every time we
-  invoke `get()` because we know that its type was checked earlier
-  when the scope local was bound.
-  
-* `ScopeLocal.snapshot()` doesn't copy anything, instead simply
-  returning a reference to the current thread's inheritable scope
-  locals. Because this set of value bindings is immutable, no copy is
-  needed.
-  
+    
 ## History
 
-The need for scope locals arose from Project Loom. Loom enables a way
+The need for scope locals arose from Project Loom. Loom enables a style
 of Java programming where threads are not a scarce resource to be
 carefully managed by thread pools but are much more abundant, limited
 only by memory. To allow us to create large numbers of threads &mdash;
