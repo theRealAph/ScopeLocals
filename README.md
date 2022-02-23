@@ -1,19 +1,12 @@
-# Scope Locals - ish
+# Scope Locals
 
 ## Summary
 
 Enhance the Java API with scope locals, which are dynamically scoped,
-effectively final, local values. They allow a lightweight form of
-thread inheritance, which is useful in systems with many threads and
-tasks.
+effectively final, local values.
 
-`ScopeLocal` is in essence a redesign of `ThreadLocal` with a more
-modern approach. `ThreadLocal` offers unrestricted mutability,
-designed back when we thought mutability was a good thing.
 `ScopeLocal` restricts mutability, allowing us to reason about the
-value more precisely and optimize more effectively. Scope locals also
-give us a way to make inheritance much cheaper, so we can extend it to
-tasks that run in thread pools.
+value more precisely and optimize more effectively.
 
 ## Non-Goals
 
@@ -29,30 +22,121 @@ variables without code changes.
 
 ## Motivation
 
-The need for scope locals arose from Project Loom. Loom enables a style
-of Java programming where threads are not a scarce resource to be
-carefully managed by thread pools but are much more abundant, limited
-only by memory. To allow us to create large numbers of threads &mdash;
-potentially millions &mdash; we'll need to make all of the per-thread
-structures scale well. Thread-local variables have a significant
-time and memory footprint when creating new threads.
+`ScopeLocal` is in essence a redesign of `ThreadLocal` with a more
+modern approach. This `ScopeLocal` JEP presents a new construct that
+is more predictable and reliable, and will allow better code to be
+generated.
 
-At present, when a new `Thread` instance is created, its parent's set of
-inheritable thread-local variables is cloned. This is necessary
+`ThreadLocal`s are, more or less, thread-confined global
+variables. Once set, a `ThreadLocal`'s value persists until it is
+`set()` to a different value or it is removed altogether by calling
+`remove()`.
+
+In contrast,
+
+* A scope local is bound to a value at the start of a "scope"
+  (i.e. the method that binds it; more below) and its previous value
+  (or none) is always restored at the end of that scope.
+
+* The value bound to a scope local cannot change within a method.
+  There is no `ScopeLocal.set()` method. (A scope local can be
+  re-bound in a callee, of which more later, but the value in that
+  inner binding cannot escape to the caller.)
+
+* These properties allow us to generate good code. In many cases a
+  scope-local `get()` is as fast as a local variable.
+
+* We also support thread inheritance for scope locals, so that the
+  bound values of inheritable scope locals are captured when threads
+  are created, in some contexts.
+
+(`ThreadLocal` offers unrestricted mutability, designed back
+when we thought mutability was a good thing.)
+
+The need for scope locals arose from Project Loom. However, scope
+locals also have some properties that make them a better fit than
+thread-local variables in many contexts, so their usefulness extends
+beyond Project Loom.
+
+Loom enables a style of Java programming where threads are not a
+scarce resource to be carefully managed by thread pools but are much
+more abundant, limited only by memory. To allow us to create large
+numbers of threads &mdash; potentially millions &mdash; we'll need to
+make all of the per-thread structures scale well. Thread-local
+variables have a significant time and memory footprint when creating
+new threads.
+
+At present, when a new `Thread` instance is created, its parent's set
+of inheritable thread-local variables is cloned. This is necessary
 because a thread's set of thread locals is, by design, mutable, so it
 cannot be shared between threads. Every child thread ends up carrying
-a local copy of its parent's entire set of (inheritable) thread locals, whether the
-child needs them or not.
+a local copy of its parent's entire set of (inheritable) thread
+locals, whether the child needs them or not.
 
-We'd like to have a feature allows per-thread context information to be 
-inherited by a thread without an expensive cloning operation. Some kind
-of immutable data structure fits this need, because the inheriting thread 
-needs only to copy a reference to its parent's set of scope locals.
+We'd like to have a feature that allows per-thread context information
+to be inherited by a thread without an expensive cloning operation.
+Some kind of immutable data structure fits this need, because the
+inheriting thread needs only to copy a reference to its parent's set
+of scope locals.
 
-However, scope locals are not only useful for thread inheritance. They
-also have some properties that make them a better fit than thread-local
-variables in some contexts, so their usefulness extends beyond Project
-Loom.
+## Description
+
+The core idea of scope locals is to support something like a "special
+variable" in Common Lisp. This is a dynamically scoped variable, which
+acquires a value on entry to a lexical scope; when that scope
+terminates, the previous value (or none) is restored. However, for
+Java we don't want our scope locals to have a `set()` method.
+
+One useful way to think of scope locals is as invisible, effectively
+final, parameters that are passed through every method invocation.
+These parameters will be accessible within the "dynamic scope" of a
+scope local's binding operation (the set of methods invoked within the
+binding scope, and any methods invoked transitively by them). They are
+guaranteed to be re-entrant &mdash; when used correctly.
+
+```
+  // Declare scope locals x and y
+  static final ScopeLocal<MyType> x = ScopeLocal.newInstance();
+  static final ScopeLocal<MyType> y = ScopeLocal.newInstance();
+
+  ... much later
+
+  {
+    ScopeLocal.where(x, expr1)
+              .where(y, expr2)
+              .run(() -> ... code that uses x.get() and y.get() ...);
+  }
+```
+
+
+* The bound values of `x` and `y` are only bound (?) while the `run()`
+  method is executing.
+* The value bound to a scope local cannot change within a method
+  because there is no `ScopeLocal.set()` method: scope locals, once
+  bound, are effectively final.
+* These properties allow us to generate good code. In most cases a
+  scope-local `x.get()` is as fast as a local variable `x`. This is
+  true regardless of how far away `x.get()` is from the point that the
+  scope local `x` is bound.
+* These also also make it easier for a reader to reason about
+  programs, in much the same way that declarina a field of a variable
+  final does.
+
+In this example, `run()` is said to "bind" `x` and `y` to the results
+of evaluating `expr1` and `expr2` respectively. While the method
+`run()` is executing, any calls to `x.get()` and `y.get()` return the
+values that have been bound to them. The methods called from `run()`,
+and any methods called by them, comprise the dynamic scope of `run()`.
+Because scope locals are effectively final, there is no equivalent of
+the `ThreadLocal.set()` method.
+
+Please note that the code that uses `x.get()` and `y.get()` may be a
+very long way away, for example in a callback somewhere. Imagine a
+complex system, with many intervening method calls, between the point
+where a scope local is bound to a value and the point where that value
+is retrieved.
+
+## Uses of scope locals
 
 ### Hidden parameters for callbacks
 
@@ -61,9 +145,9 @@ into your code. In your callback you need some context, perhaps a
 transaction ID or some `File` instances. However, `X` provides no way
 to pass a reference through their code into your callback. Set a
 thread-local variable, then invoke `X`, then carefully `remove()` the
-thread-local variable. This usage isn't ideal for thread locals because it's not at all
-re-entrant: if `X` is recursively called via your callback, it'll overwrite your already-set thread-local variable.
-Thread locals are, more or less, thread-confined global variables.
+thread-local variable. This usage isn't ideal for thread locals
+because it's not at all re-entrant: if `X` is recursively called via
+your callback, it'll overwrite your already-set thread-local variable.
 
 ### Thread locals and recursion
 
@@ -111,70 +195,10 @@ We'd like to support as many of these use cases as we can, but only if
 the basic properties of effective finality and re-entrancy can be
 guaranteed.
 
-## Description
+### Some examples of scope local usage
 
-The core idea of scope locals is to support something like a "special
-variable" in Common Lisp. This is a dynamically scoped variable, which
-acquires a value on entry to a lexical scope; when that scope
-terminates, the previous value (or none) is restored. However, we
-don't want our scope locals to have a `set()` method.
-
-One useful way to think of scope locals is as invisible, effectively
-final, parameters that are passed through every method invocation.
-These parameters will be accessible within the "dynamic scope" of a
-scope local's binding operation (the set of methods invoked within the
-binding scope, and any methods invoked transitively by them). They are
-guaranteed to be re-entrant &mdash; when used correctly.
-
-Scope locals provide us with some other nice-to-have
-features, in particular:
-
-* **Effective finality** The value bound to a scope local cannot
-  change within a method. There is no `ScopeLocal.set()` method. (It
-  can be re-bound in a callee, of which more later.)
-* **Well-defined extent** A scope local is bound to a value at the start
-  of a scope and its previous value (or none) is always restored at
-  the end.
-* **Optimization opportunities** These properties allow us to generate
-  good code. In many cases a scope-local `get()` is as fast as a local
-  variable.
-* **Inheritance** We also intend to support inheritance for scope locals, so
-  that the bound values of inheritable scope locals are captured when
-  threads are created, in some contexts. 
-
-### Some examples
-
-Please note that these examples are necesarily simple, and in
+These examples are necesarily simple for the sake of brevity, and in
 many cases you wouldn't need a thread local or a scope local.
-You are invited to imagine a complex system, with many intervening
-method calls, between the point where a scope local is bound to a
-value and the point where that value is retrieved.
-
-```
-  // Declare scope locals x and y
-  static final ScopeLocal<MyType> x = ScopeLocal.newInstance();
-  static final ScopeLocal<MyType> y = ScopeLocal.newInstance();
-
-  {
-    ScopeLocal.where(x, expr1)
-              .where(y, expr2)
-              .run(() -> ... code that uses x.get() and y.get() ...);
-  }
-```
-
-In this example, `run()` is said to "bind" `x` and `y` to the results
-of evaluating `expr1` and `expr2` respectively. While the method
-`run()` is executing, any calls to `x.get()` and `y.get()` return the
-values that have been bound to them. The methods called from `run()`,
-and any methods called by them, comprise the dynamic scope of `run()`.
-Because scope locals are effectively final, there is no equivalent of
-the `ThreadLocal.set()` method.
-
-(Note: `x` and `y` have the usual Java access modifiers. Even though
-a scope local is implicitly passed to every method in its dynamic
-scope, a method will only be able to use `get()` if that scope local's
-name is accessible to the method. So, sensitive security information
-can be passed through a stack of non-privileged invocations.)
 
 The following example uses a scope local to make credentials available
 to callees.
@@ -227,6 +251,14 @@ We recommend this form when multiple values are shared with the same
 consumer because it's likely to be more efficent and it's clear to the
 reader what is intended.
 
+(Note: `x` and `y` have the usual Java access modifiers. Even though
+a scope local is implicitly passed to every method in its dynamic
+scope, a method will only be able to use `get()` if that scope local's
+name is accessible to the method. So, sensitive security information
+can be passed through a stack of non-privileged invocations.)
+
+## Scope locals in more detail
+
 ### Shadowing
 
 It is sometimes useful to be able to re-bind an already-bound scope
@@ -249,11 +281,12 @@ scope of the lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-## Inheritance
+### Inheritance
 
-We intend to support inheritance of scope local bindings by some subtasks,
-in particular `Thread` instances in a Structured Concurrency context. This
-is described in the Structured Concurrency JEP https://openjdk.java.net/jeps/8277129.
+We intend to support inheritance of scope local bindings by some
+subtasks, in particular `Thread` instances in a Structured Concurrency
+context. This is described in the Structured Concurrency JEP
+https://openjdk.java.net/jeps/8277129.
 
 ## What works with scope locals &mdash; and what doesn't
 
@@ -491,7 +524,7 @@ http://people.redhat.com/~aph/loom-api/api/java.base/java/lang/ScopeLocal.html
 
 ## Alternatives
 
-It is possible to emulate most of the features of scope locals with
+It is possible to emulate many of the features of scope locals with
 `ThreadLocal`s, albeit at some cost in memory footprint, runtime
 security, and performance. However, inheritable `ThreadLocal`s don't
 really work with thread pools, and run the risk of leaking information
