@@ -29,10 +29,30 @@ variables without code changes.
 
 ## Motivation
 
-In order to explain the motivation for scope locals, we'll first try
-to enumerate the ways that thread locals are used today. Later, in the "What
-works with scope locals" section, we'll discuss how well these uses
-are supported by scope locals.
+The need for scope locals arose from Project Loom. Loom enables a style
+of Java programming where threads are not a scarce resource to be
+carefully managed by thread pools but are much more abundant, limited
+only by memory. To allow us to create large numbers of threads &mdash;
+potentially millions &mdash; we'll need to make all of the per-thread
+structures scale well. Thread-local variables have a significant
+time and memory footprint when creating new threads.
+
+At present, when a new `Thread` instance is created, its parent's set of
+inheritable thread-local variables is cloned. This is necessary
+because a thread's set of thread locals is, by design, mutable, so it
+cannot be shared between threads. Every child thread ends up carrying
+a local copy of its parent's entire set of (inheritable) thread locals, whether the
+child needs them or not.
+
+We'd like to have a feature allows per-thread context information to be 
+inherited by a thread without an expensive cloning operation. Some kind
+of immutable data structure fits this need, because the inheriting thread 
+needs only to copy a reference to its parent's set of scope locals.
+
+However, scope locals are not only useful for thread inheritance. They
+also have some properties that make them a better fit than thread-local
+variables in some contexts, so their usefulness extends beyond Project
+Loom.
 
 ### Hidden parameters for callbacks
 
@@ -232,8 +252,8 @@ to a highly privileged set of credentials.)
 ## Inheritance
 
 We intend to support inheritance of scope local bindings by some subtasks,
-in particular `Thread` instances in a Structured Concurrency context, but
-the design of the API is not yet finalized.
+in particular `Thread` instances in a Structured Concurrency context. This
+is described in the Structured Concurrency JEP https://openjdk.java.net/jeps/8277129.
 
 ## What works with scope locals &mdash; and what doesn't
 
@@ -462,22 +482,6 @@ to generate excellent code for `get()` and inheritance.
   into a register at the start of a method. Repeated uses of a scope
   local can be as fast as using a local variable.
     
-## History
-
-The need for scope locals arose from Project Loom. Loom enables a style
-of Java programming where threads are not a scarce resource to be
-carefully managed by thread pools but are much more abundant, limited
-only by memory. To allow us to create large numbers of threads &mdash;
-potentially millions &mdash; we'll need to make all of the per-thread
-structures scale well. Thread-local variables have a significant
-time and memory footprint when creating new threads.
-
-When a new `Thread` instance is created, its parent's set of
-inheritable thread-local variables is cloned. This is necessary
-because a thread's set of thread locals is, by design, mutable, so it
-cannot be shared between threads. Every child thread ends up carrying
-a local copy of its parent's entire set of thread locals, whether the
-child needs them or not.
 
 ### API
 
@@ -500,4 +504,3 @@ implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or
 both. It is better, therefore, not to do that but to give scope locals
 a separate identity from thread locals.
-
