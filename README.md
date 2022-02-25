@@ -89,6 +89,18 @@ guaranteed to be re-entrant &mdash; when used correctly.
   programs, in much the same way that declaring a field of a variable
   final does.
 
+[ Note: The apparently-singleton variables `x` and `y` here don't
+actually point to any data. A `ScopeLocal` instance is really no more
+than a name: all information about the currently-bound values of each
+scope local is contained in the current `Thread`. ]
+
+[ Another note: if you need to make sure that no code other than your
+own can access a `ScopeLocal`, declare it `private`. All of the usual
+Java access modifiers can be used to restrict access to it. Even if a
+secret is passed through a chain of untrused code via a scope local,
+its value can only be retrieved by code that can access that
+`ScopeLocal` instance.]
+
 In this example, `run()` is said to "bind" `x` and `y` to the results
 of evaluating `expr1` and `expr2` respectively. While the method
 `run()` is executing, any calls to `x.get()` and `y.get()` return the
@@ -189,7 +201,7 @@ The following example uses a scope local to make credentials available
 to callees.
 
 ```
-    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.forType(Credentials.class);
+    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
 
     Credentials creds = ...
     ScopeLocal.where(CREDENTIALS, creds).run(() -> {
@@ -223,7 +235,7 @@ values, for example:
 
 ```
     record Credentials(int userId, String password) {}
-    static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.forType(Credentials.class);
+    static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
 
     {
         ScopeLocal.where(position,
@@ -232,15 +244,9 @@ values, for example:
     }
 ```
 
-We recommend this form when multiple values are shared with the same
-consumer because it's likely to be more efficent and it's clear to the
-reader what is intended.
-
-(Note: `x` and `y` have the usual Java access modifiers. Even though
-a scope local is implicitly passed to every method in its dynamic
-scope, a method will only be able to use `get()` if that scope local's
-name is accessible to the method. So, sensitive security information
-can be passed through a stack of non-privileged invocations.)
+We recommend using a single scope local that refers to a record rather
+than multiple scope locals because it's likely to be more efficent and
+it's clear to the reader what is intended.
 
 ## Scope locals in more detail
 
@@ -546,7 +552,7 @@ to generate excellent code for `get()` and inheritance.
 
 There is more detail in the Javadoc for the API, at
 
-http://people.redhat.com/~aph/loom-api/api/java.base/java/lang/ScopeLocal.html
+http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ScopeLocal.html
 
 ## Alternatives
 
