@@ -459,11 +459,22 @@ separate authorship.
 
 ### The idea of a "current context"
 
-These will work well, but because scope local bindings are always
-removed at the end of the scope in which they were bound, you must run
-an entire operation from that binding scope. So, you won't be able to
-do something like this example, which has a `ThreadLocal` embedded in
-a `DatabaseContext`:
+```
+Java Concurrency in Practice:
+
+"... containers associate a transaction context with an executing
+thread for the duration of an EJB call. This is easily implemented
+using a static Thread-Local holding the transaction context: when
+framework code needs to determine what transaction is currently
+running, it fetches the transaction context from this
+ThreadLocal."
+```
+
+This kind of thing iw well suited to the use of a scope local, but
+because scope local bindings are always removed at the end of the
+scope in which they were bound, you must run an entire operation from
+that binding scope. So, you won't be able to do something like this
+example, which has a `ThreadLocal` embedded in a `DatabaseContext`:
 
 ```
 try (final DatabaseContext ctx = new DatabaseContext()) {
@@ -474,10 +485,11 @@ try (final DatabaseContext ctx = new DatabaseContext()) {
 ```
 
 instead you'll have to do something like this, where
-`DatabaseContext.run()` binds a thread local then calls a lambda:
+`DatabaseContext.run()` binds a scope local then calls a lambda:
 
 ```
 DatabaseContext.run(() -> doSomething());
+DatabaseContext.run(() -> doSomethingElse());
 ```
 
 that is to say, run an entire operation in the outer scope of the
