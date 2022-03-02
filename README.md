@@ -171,7 +171,7 @@ class Example {
 }
 ```
 
-A scope local acquires (we say: is bound to) a value on entry to a
+A scope local acquires (we say: _is bound to_) a value on entry to a
 scope; when that scope terminates, the previous value (or none) is
 restored. In this case, the scope of `X`'s binding is the duration of
 the Lambda invoked by `run()`.
