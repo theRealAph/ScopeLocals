@@ -470,7 +470,7 @@ running, it fetches the transaction context from this
 ThreadLocal."
 ```
 
-This kind of thing iw well suited to the use of a scope local, but
+This kind of thing is well suited to the use of a scope local, but
 because scope local bindings are always removed at the end of the
 scope in which they were bound, you must run an entire operation from
 that binding scope. So, you won't be able to do something like this
