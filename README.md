@@ -3,7 +3,8 @@
 ## Summary
 
 Define a standard, lightweight way to pass contextual information from
-a caller about the currently executing thread or group of threads.
+a caller to callees in the currently executing thread, and in some
+cases to a group of threads.
 
 ## Motivation
 
@@ -12,28 +13,41 @@ context in which a method is running. For example, it might be
 necessary to know a transaction context for the currently-executing
 thread for the duration of an EJB call. Or it might be useful for an
 API to be able to check that a caller has appropriate permissions to
-perform an action. 
+perform an action.
 
-At present, the mechanism we have to communicate contexts is
-`ThreadLocal`, but it has some disadvantages when used for this
-purpose. `ThreadLocal` is rather heavyweight, requiring every thread
-to have its own independently initialized (?) copy of the variable,
-and to keep a table of these copies. Also, while is is possible to
-`remove()` a `ThreadLocal` from a thread's table it's common for a
-programmer to forget to do so: so much so that an entry in a
-`ThreadLocal` map is a weak reference in order not to leak memory when
-a `ThreadLocal` key becomes unreachable.
+If you have some information that is specific to a thread (or a group
+of threads) your choices are to pass that information to every method
+that may need it, or to associate that information with a thread,
+which usually means a `ThreadLocal`.
+
+`ThreadLocal` has some disadvantages when used for this purpose. It is
+rather heavyweight, requiring every thread to have its own
+independently initialized (?) copy of the variable, and to keep a
+table of these copies. Also, while is is possible to `remove()` a
+`ThreadLocal` from a thread's table it's common for a programmer to
+forget to do so: so much so that an entry in a `ThreadLocal` map is a
+weak reference in order not to leak memory when a `ThreadLocal` key
+becomes unreachable.
+
+The need for scope locals arose from Project Loom, where threads are
+lightweight and numerous.
+
+When a new `Thread` instance is created, its parent's set of
+inheritable thread-local variables is cloned. This is necessary
+because a thread's set of thread locals is, by design, mutable, so it
+cannot be shared between threads. Every child thread ends up carrying
+a local copy of its parent's entire set of (inheritable) thread
+locals, whether the child needs them or not.
+
+We'd like to have a feature that allows per-thread context information
+to be inherited by a thread without an expensive cloning operation.
+Some kind of immutable data structure fits this need, because the
+inheriting thread needs only to copy a reference to its parent's set
+of values.
 
 Here we propose a mechanism to associate a value with a name on entry
 to a scope, and automatically (securely, predictably) remove that
 association when the scope exits. We call such things scope locals.
-
-In addition, because scope locals are values rather than variables, it
-will be possible to share the associated structures among a group of
-threads, reducing the memory footprint of using `ThreadLocal` for the
-purpose. This property also will permit us to generate better (faster,
-smaller) code for accesses, in many cases as fast as accesses to local
-variables.
 
 ## Non-Goals
 
@@ -49,11 +63,17 @@ or most cases.
 
 ## Description
 
-It's usual to say that Java is _lexically scoped_, in the
-sense that variables (and other entities) can be referred to by a
-simple name such that an inner level of nesting has access to its
-outer levels. Here, `x` is declared in the scope of a class `Example`,
-and referred to from within the scope of the method `printIt()`.
+In Java, the scope of a declaration -- the association of a name with
+an entity such as a variable -- is the region of the program within
+which the entity declared by the declaration can be referred to using
+a simple name.
+
+It's usual to say that Java is _lexically scoped_, in the sense that
+variables (and other entities) can be referred to by a simple name
+only within the region of source code in which they're declared. Here,
+for example, `x` is declared in a class `Example`, and may be referred
+to as `x` in any method declared in the same class. We say, therefore,
+that the scope of `x` is the class `Example`:
 
 ```
 class Example {
@@ -65,8 +85,12 @@ class Example {
 }
 ```
 
-And as a slightly more complex example, nested variable scopes inside
-a method:
+Java also has nested variable scopes inside a method. Here, the
+variable `x` is declared in the outermost scope of the method
+`printIt()`, and the variable `i` is declared in an inner scope, that
+of a `for` loop. In this example, th scope of `x` is that of the
+method `printIt()` from the point where `x` is declared to the closing
+brace of the method:
 
 ```
 class Example {
@@ -83,10 +107,26 @@ class Example {
 }
 ```
 
-The core idea of scope locals is to support "dynamically scoped"
-values. If we were to imagine a variant of Java which supported
-dynamically scoped values as a built-in feature, it might look like
-this:
+(From the Java Language Specification: the scope of a local variable
+declaration in a block is the rest of the block in which the
+declaration appears, starting with its own initializer and including
+any further declarators to the right in the local variable declaration
+statement.
+https://docs.oracle.com/javase/specs/jls/se17/html/jls-6.html#jls-6.3)
+
+With lexical scoping, the region of the program within which an entity
+is accessible by name is a region of the source code.
+
+With dynamic scoping, the region of the program within which an entity
+is accessible by name is a duration in time, from the point at which
+the name is bound to the entity to the point at which the binding is
+removed.
+
+The core idea of scope locals is to support dynamically scoped values,
+which may be referred to anywhere within the dynamic scope that binds
+a value to a scope local. If we were to imagine a variant of Java
+which supported dynamically scoped values as a built-in feature, it
+might look like this:
 
 ```
 class Example {
@@ -106,9 +146,10 @@ class Example {
 ```
 
 Although some programming languages support something like this, we
-don't propose to add it to Java. Instead we'd to define a `ScopeLocal`
-class which does something similar, but with a library facility rather
-than a language feature, and with a proper declaration for `X`:
+don't propose to add it to the Java language. Instead we'd like to
+define a `ScopeLocal` class which does something similar, but with a
+library facility rather than a language feature, and with a formal
+declaration for `X`:
 
 ```
 class Example {
@@ -166,7 +207,6 @@ class AnotherClass {
 }
 ```
 
-
 One useful way to think of scope locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
 These parameters will be accessible within the dynamic scope of a
@@ -188,127 +228,113 @@ guaranteed to be re-entrant &mdash; when used correctly.
   }
 ```
 
-
-* The bound values of `x` and `y` are only bound (?) while the `run()`
-  method is executing.
-* The value bound to a scope local cannot change within a method
-  because there is no `ScopeLocal.set()` method: scope locals, once
-  bound, are effectively final.
-* These properties allow us to generate good code. In most cases a
-  scope-local `x.get()` is as fast as a local variable `x`. This is
-  true regardless of how far away `x.get()` is from the point that the
-  scope local `x` is bound.
-* These also also make it easier for a reader to reason about
-  programs, in much the same way that declaring a field of a variable
-  final does.
-
-[ Note: The apparently-singleton variables `x` and `y` here don't
-actually point to any data. A `ScopeLocal` instance is really no more
-than a name: all information about the currently-bound values of each
-scope local is contained in the current `Thread`. ]
-
-[ Another note: if you need to make sure that no code other than your
-own can access a `ScopeLocal`, declare it `private`. All of the usual
-Java access modifiers can be used to restrict access to it. Even if a
-secret is passed through a chain of untrused code via a scope local,
-its value can only be retrieved by code that can access that
-`ScopeLocal` instance.]
-
 In this example, `run()` is said to "bind" `x` and `y` to the results
 of evaluating `expr1` and `expr2` respectively. While the method
 `run()` is executing, any calls to `x.get()` and `y.get()` return the
 values that have been bound to them. The methods called from `run()`,
 and any methods called by them, comprise the dynamic scope of `run()`.
-Because scope locals are effectively final, there is no equivalent of
-the `ThreadLocal.set()` method.
+
+* The bound values of `x` and `y` are only bound (?) while the `run()`
+  method is executing.
+* There is no `ScopeLocal.set()` method: scope locals, once bound, are
+  effectively final.
+* These properties allow us to generate good code. In most cases a
+  scope-local `x.get()` is as fast as a local variable `x`. This is
+  true regardless of how far away `x.get()` is from the point that the
+  scope local `x` is bound.
+* These properties also also make it easier for a reader to reason
+  about programs, in much the same way that declaring a field of a
+  variable final does.
 
 Please note that the code that uses `x.get()` and `y.get()` may be a
 very long way away, for example in a callback somewhere. Imagine a
 complex system, with many intervening method calls, between the point
 where a scope local is bound to a value and the point where that value
-is retrieved.
+is retrieved. Like so:
 
-## Scope locals in threads
+```
+    void run1() {
+        ScopeLocal.where(x, new MyType("Jill"))
+                  .where(y, new MyType("Sofia"))
+                  .run(() -> m());
+    }
+    void m() {
+        n();
+    }
+    void n() {
+        o();
+    }
+    void o() {
+        System.out.println("My name is " + x.get().toString());
+        // Prints "My name is Jill"
+    }
+```
 
-The need for scope locals arose from Project Loom, where threads are
-lightweight and numerous.
+But when called in a different context, we see a different value for
+`x.get()`
 
-At present, when a new `Thread` instance is created, its parent's set
-of inheritable thread-local variables is cloned. This is necessary
-because a thread's set of thread locals is, by design, mutable, so it
-cannot be shared between threads. Every child thread ends up carrying
-a local copy of its parent's entire set of (inheritable) thread
-locals, whether the child needs them or not.
-
-We'd like to have a feature that allows per-thread context information
-to be inherited by a thread without an expensive cloning operation.
-Some kind of immutable data structure fits this need, because the
-inheriting thread needs only to copy a reference to its parent's set
-of values.
+```
+    void run2() {
+        ScopeLocal.where(x, new MyType("Helena"))
+                  .where(y, new MyType("Henri"))
+                  .run(() -> p());
+    }
+    void p() {
+        q();
+    }
+    void q() {
+        r();
+    }
+    void r() {
+        System.out.println("My name is " + x.get().toString());
+        // Prints "My name is Helena"
+    }
+```
 
 ## Uses of scope locals
 
 ### Hidden parameters for callbacks
 
 You may want to invoke a method `X` in a library that later calls back
-into your code. In your callback you need some context, perhaps a
-transaction ID or some `File` instances. However, `X` provides no way
-to pass a reference through their code into your callback. Set a
-thread-local variable, then invoke `X`, then carefully `remove()` the
-thread-local variable. This usage isn't ideal for thread locals
-because it's not at all re-entrant: if `X` is recursively called via
-your callback, it'll overwrite your already-set thread-local variable.
+into your code. In your callback you to do some logging, so you need a
+way to find the logger to use. However, `X` provides no way to pass a
+reference to a logger through their code into your callback. You don't
+want to turn logging on all the time, just when certain parts of the
+programmer are executing.
 
-### Thread locals and recursion
+Here's a simple example of how you'd using a scope local to add
+context-sensitive logging to an application. Let's assume that you
+want to log some events, but only for certain places when your
+application is running.
 
-Sometimes you want to be able to detect recursion, perhaps because a
-framework isn't re-entrant or because you want to limit recursion in
-some way. A thread-local variable provides a way to do this: set it
-once, invoke a method, and somwhere deep in that method, test again to
-see if the thread-local variable is set. For this to work reliably
-you'll probably need the thread-local variable to be a recursion
-counter, which you can `remove()` when it gets to zero.
+First, declare an interface that is invoked when a loggable event
+occurs, and a `ScopeLocal` instance that will refer to one:
 
-The detection of recursion is also useful in the case of flattened
-transactions: any transaction started when a transaction in progress
-becomes part of the outermost transaction.
+```
+    interface MyLogger {
+        public void log(String s);
+    }
 
-### Contexts of many kinds: the notion of a "current context".
+    private static final ScopeLocal<MyLogger> SL_LOGGER
+            = ScopeLocal.newInstance(MyLogger.class);
+```
 
-    Java Concurrency in Practice:
+In your application code, call `SL_LOGGER`'s `log()` method:
 
-    "... containers associate a transaction context with an executing
-    thread for the duration of an EJB call. This is easily implemented
-    using a static Thread-Local holding the transaction context: when
-    framework code needs to determine what transaction is currently
-    running, it fetches the transaction context from this
-    ThreadLocal."
+```
+    void someMethodDeepInALibrary() {
+        // ...
+        SL_LOGGER.orElse(NULL_LOGGER).log("Here's looking at you, kid.");
+```
 
-Another example occurs in graphics, where there is a drawing context.
+And when you want to do some logging, bind `SL_LOGGER` to do whatever
+you want:
 
-### Caches for Non-thread-safe objects that are expensive to create, e.g. `SimpleDateFormat`.
+```
+        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s)).run(this::exec);
+```
 
-Some utility classes such as `SimpleDateFormat` are mutable and they
-are not thread-safe. The `SimpleDateFormat` API specification suggests
-that a new instance should be created for each thread.
-
-### Hidden return values
-
-It is possible to call into a method which returns a value by setting
-a thread-local variable, possibly deep in a stack of method
-calls. This isn't common and is unstructured (at best) but we don't
-doubt that some programs do it.
-
-### Our goals
-
-We'd like to support as many of these use cases as we can, but only if
-the basic properties of effective finality and re-entrancy can be
-guaranteed.
-
-### Some examples of scope local usage
-
-These examples are necesarily simple for the sake of brevity, and in
-many cases you wouldn't need a thread local or a scope local.
+### Securely passing credentials
 
 The following example uses a scope local to make credentials available
 to callees.
@@ -330,38 +356,6 @@ to callees.
         return new Connection();
     }
 ```
-
-We also provide a shortcut for the case where only a single scope
-local is set:
-
-```
-   {
-       ScopeLocal.where(x, expr1, (() -> 
-           ... code that uses x.get() ...);
-   }
-
-```
-
-This is a natural fit for a `record` when you need to share a group of
-values, for example:
-
-
-```
-    record Credentials(int userId, String password) {}
-    static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
-
-    {
-        ScopeLocal.where(position,
-            new Credentials(userDB.getCurrentUID(), console.askForPassword()),
-                ... code that, somewhere deep, uses CREDENTIALS to connect ... ;
-    }
-```
-
-We recommend using a single scope local that refers to a record rather
-than multiple scope locals because it's likely to be more efficent and
-it's clear to the reader what is intended.
-
-## Scope locals in more detail
 
 ### Shadowing
 
@@ -385,135 +379,23 @@ scope of the lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-### Thread Inheritance
+### Recursion detection, and locating the current context
 
-We intend to support inheritance of scope local bindings by some
-subtasks, in particular `Thread` instances in a Structured Concurrency
-context. This is described in the Structured Concurrency JEP
-https://openjdk.java.net/jeps/8277129.
+Sometimes you want to be able to detect recursion, perhaps because a
+framework isn't re-entrant or because you want to limit recursion in
+some way. A thread-local variable provides a way to do this: set it
+once, invoke a method, and somwhere deep in that method, test again to
+see if the thread-local variable is set. For this to work reliably
+you'll probably need the thread-local variable to be a recursion
+counter, which you can `remove()` when it gets to zero.
 
-Here's an example that uses a `StructuredTaskScope` (from Project
-Loom) to fork a number of virtual threads. A scope-local called
-`invocationCounter` is used to count the number of times that
-`someMethod()` is invoked. This works because scope local bindings are
-inherited by threads forked by a `StructuredTaskScope`.
+The detection of recursion is also useful in the case of flattened
+transactions: any transaction started when a transaction in progress
+becomes part of the outermost transaction.
 
-```
-    public void exampleWithInvocationCounter() throws Exception {
-        ScopeLocal.where(invocationCounter, new AtomicInteger())
-                .run(() -> {
-                    forkSomeThreads();
-                    System.out.println("" + invocationCounter.get() + " invocations");
-                });
-    }
-
-    public void forkSomeThreads() {
-        try (var scope = new StructuredTaskScope(null, threadFactory)) {
-            for (int i = 0; i < 100; i++) {
-                scope.fork(() -> someMethod());
-            }
-            scope.join();
-        } catch (Exception e) {
-        }
-    }
-
-    Void someMethod() {
-        // Count the number of times this method is invoked
-        if (invocationCounter.isBound()) {
-            invocationCounter.get().getAndIncrement();
-        }
-
-        // ... more code here
-
-        return null;
-    }
-
-    static final ScopeLocal<AtomicInteger> invocationCounter = ScopeLocal.newInstance();
-    private ThreadFactory threadFactory = Thread.ofVirtual().factory();
-```
-
-## What works with scope locals &mdash; and what doesn't
-
-Because scope locals have a well-defined extent, the block in which
-they were bound, they can never be syntactically (or even
-structurally) compatible with thread-local variables. Therefore, some
-code changes will be required to switch from thread locals to scope
-locals.
-
-Please note that, for the sake of brevity, these are simple examples. In
-some cases a simple refactoring would make the use of scope locals
-unnecessary, but that would be far more difficult in a more complex
-scenario with multiple libraries of separate authorship.
-
-### The idea of a "current context"
-
-These will work well, but because scope local bindings are always
-removed at the end of the scope in which they were bound, you must run
-an entire operation from that binding scope. So, you won't be able to
-do something like this example, which has a `ThreadLocal` embedded in
-a `DatabaseContext`:
-
-```
-try (final DatabaseContext ctx = new DatabaseContext()) {
-  // Within this block, every use of DatabaseContext.current()
-  // returns the current context.
-  doSomething(ctx);
-}
-```
-
-instead you'll have to do something like this, where
-`DatabaseContext.run()` binds a thread local then calls a lambda:
-
-```
-DatabaseContext.run(() -> doSomething());
-```
-
-that is to say, run an entire operation in the outer scope of the
-scope local binding.
-
-### Recursion detection and counting
-
-This case will work well too, but because scope locals have exactly
-the properties required, you won't need a recursion counter to know
-when to `remove()` the binding.
-
-The following is an example that combines recursion detection and a
-current context.
-
-Firstly, `ThreadLocal` style:
-
-```
-    public final RendererContext getRendererContext() {
-        // ctxTL is a thread-local variable that contains a context
-        RendererContext ctx = ctxTL.get();
-        if (ref != null) {
-            // Check reentrance:
-            if (ctx.usage == USAGE_TL_INACTIVE) {
-               ctx.usage = USAGE_TL_IN_USE;
-               return ctx;
-            }
-        }
-        ctx = newContext();
-        ctxTL.set(ctx);
-        return ctx;
-    }
-
-   // called from here ...
-
-    final RendererContext rdrCtx = getRendererContext();
-    try {
-        final Path2D.Double p2d = rdrCtx.getPath2D();
-        strokeTo(rdrCtx, p2d, ...);
-        return new Path2D.Double(p2d);
-    } catch {
-        ...
-    } finally {
-        // recycle the RendererContext instance
-        returnRendererContext(rdrCtx);
-    }
-```
-
-might turn into something like this with scope locals:
+This is a rather complicated example because it's adapted from
+real-world library code. It contains recursion detection and the idea
+of a current context, in this case a graphics rendering context:
 
 ```
     public final RendererContext getRendererContext() {
@@ -558,81 +440,48 @@ Where `RendererContext.call()` is defined like this:
     }
 ```
 
-### Hidden parameters for callbacks
+We'd like to support as many of these use cases as we can, but only if
+the basic properties of effective finality and re-entrancy can be
+guaranteed.
 
-These should work well, with some code changes.
+## Replacing some uses of `ThreadLocal` with scope locals
 
-Here's a simple example of using a scope local to add
-context-sensitive logging to an application. Let's assume that you
-want to log some events, but only for certain places when your
-application is running.
+Because scope locals have a well-defined lifetime, the block in which
+they were bound, they can never be syntactically (or structurally)
+compatible with thread-local variables. Therefore, some code changes
+will be required to switch from thread locals to scope locals.
 
-First, declare an interface that is invoked when a loggable event
-occurs, and a `ScopeLocal` instance that will refer to one:
+Please note that, for the sake of brevity, these are simple
+examples. In some of these examples a simple refactoring would make
+the use of scope locals unnecessary, but that would be far more
+difficult in a more complex scenario with multiple libraries of
+separate authorship.
 
-```
-    interface MyLogger {
-        public void log(String s);
-    }
-    private static final ScopeLocal<MyLogger> SL_LOGGER
-            = ScopeLocal.newInstance(MyLogger.class);
-```
+### The idea of a "current context"
 
-In your application code, call `SL_LOGGER`'s `log()` method:
-
-```
-    void someMethodDeepInALibrary() {
-        // ...
-        SL_LOGGER.orElse(NULL_LOGGER).log("Here's looking at you, kid.");
-```
-
-And when you want to do some logging, bind `SL_LOGGER` to do whatever
-you want:
+These will work well, but because scope local bindings are always
+removed at the end of the scope in which they were bound, you must run
+an entire operation from that binding scope. So, you won't be able to
+do something like this example, which has a `ThreadLocal` embedded in
+a `DatabaseContext`:
 
 ```
-        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s)).run(this::exec);
+try (final DatabaseContext ctx = new DatabaseContext()) {
+  // Within this block, every use of DatabaseContext.current()
+  // returns the current context.
+  doSomething(ctx);
+}
 ```
 
-You can do something similar with a thread-local variable, but in a
-different form:
+instead you'll have to do something like this, where
+`DatabaseContext.run()` binds a thread local then calls a lambda:
 
 ```
-    interface MyLogger {
-        public void log(String s);
-    }
-    private static final ThreadLocal<MyLogger> TL_LOGGER
-            = ThreadLocal.withInitial(() -> NULL_LOGGER);
-
-    void someMethodDeepInALibrary() {
-        // ...
-        TL_LOGGER.get().log("Toto, I've a feeling we're not in Kansas any more.");
-        // ...
-    }
-
-    // ... called from
-
-        try {
-            TL_LOGGER.set((s) -> LOGGER.severe(s));
-            this.exec();
-        } finally {
-            TL_LOGGER.set(NULL_LOGGER);
-        }
+DatabaseContext.run(() -> doSomething());
 ```
 
-Note that this isn't quite the same as the scope local example because
-it's not re-entrant: if `TL_CALLBACK` was set when this code was
-executed its setting would be lost. The closest thread-local equivalent of the
-scope-local example above might be something like
-
-```
-        var prev = TL_LOGGER.get();
-        try {
-            TL_LOGGER.set((s) -> LOGGER.severe(s));
-            this.exec();
-        } finally {
-            TL_LOGGER.set(prev);
-        }
-```
+that is to say, run an entire operation in the outer scope of the
+scope local binding.
 
 ### Caches for Non-thread-safe objects that are expensive to create
 
@@ -648,20 +497,7 @@ of a container class in the outer scope, call some method, and the
 callee method `set()`s the value in the container. However, while it's
 pretty obvious how it do this, it's rather evil.
 
-### Optimization
-
-Scope locals have some strongly-defined properties. These can allow us
-to generate excellent code for `get()` and inheritance.
-
-* The bound value of a scope local is effectively final within a
-  method. It may be re-bound in a callee, but we know that when the
-  callee terminates the scope local's value will have been
-  restored. For that reason, we can hoist the value of a scope local
-  into a register at the start of a method. Repeated uses of a scope
-  local can be as fast as using a local variable.
-    
-
-### API
+## API
 
 There is more detail in the Javadoc for the API, at
 
