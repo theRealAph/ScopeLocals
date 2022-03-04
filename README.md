@@ -31,21 +31,21 @@ flaw in the programming model complicates the implementation because
 an entry in a `ThreadLocal` map has to be a weak reference in order
 not to leak memory when a `ThreadLocal` key becomes unreachable.
 Moreover, the specification of `ThreadLocal` requires every thread to
-maintain a local map from `ThreadLocal` keys to values. But that's not
-all: threads need two `ThreadLocal` maps, one for "normal" thread
-locals (which are not inherited by child threads) and one for
-`InheritableThreadLocal`s, which are.
+maintain a local map from `ThreadLocal` keys to values. That's not
+all: ThreadLocal's locals aren't inherited by subthreads, but
+`InheritableThreadLocal`s are. Therefore, threads need two
+`ThreadLocal` maps, one for `ThreadLocal`s and one for
+`InheritableThreadLocal`s.
 
 The need for scope locals arose from Project Loom, where threads are
 lightweight and numerous.
 
-Firstly, there's the cost of inheriting a thread's set of
-`InheritableThreadLocal`s. When a new `Thread` instance is created,
-its parent's set of inheritable thread-local variables is deeply
-copied. This is necessary because a thread's set of thread locals is,
-by design, mutable, so it cannot be shared between threads. Every
-child thread ends up carrying a local copy of its parent's entire set
-of `InheritableThreadLocal`s.
+Firstly, there's the cost of inheritable thread locals. When a new
+`Thread` instance is created, its parent's set of inheritable
+thread-local variables is deeply copied. This is necessary because a
+thread's set of thread locals is, by design, mutable, so it cannot be
+shared between threads. Every child thread ends up carrying a local
+copy of its parent's entire set of `InheritableThreadLocal`s.
 
 We'd like to have a feature that allows per-thread context information
 to be inherited by a thread without an expensive deep-copy operation.
@@ -55,9 +55,10 @@ of values.
 
 We'd like this feature to declare the lifetime and the region of
 accessibility of the context information it refers to in an explicit
-way: "between _here_, and _there_". This is in contrast with what
-`ThreadLocal` does, which is essentially the current thread and any
-children which are created by it.
+way: "between _here_, and _there_". This is in contrast with the
+acessibility of a thread local, which is the current thread and (if
+it's an `InheritableThreadLocal`) any children created by the curret
+thread.
 
 Here we propose a mechanism to associate a value with a name on entry
 to a scope, and automatically (securely, predictably) remove that
@@ -372,38 +373,29 @@ becomes part of the outermost transaction.
 
 This is a rather complicated example because it's adapted from
 real-world library code. It contains recursion detection and the idea
-of a current context, in this case a graphics rendering context:
+of a current context, in this case a graphics rendering context.
+Rendering actions call other rendering actions, but they should share
+a rendering context. If there isn't a current context we should crate
+one; if there is, we should use it.
 
 ```
     public final RendererContext getRendererContext() {
-        // ctxSL is a scope local that refers to a context
-        if (if ctxSL.isBound()) {
-            RendererContext ctx = ctxSL.get();
-            // Check reentrance:
-            if (ctx.usage == USAGE_TL_INACTIVE) {
-               ctx.usage = USAGE_TL_IN_USE;
-               return ctx;
-            }
+        // RENDER_CTX is a scope local that refers to a context
+        // If there's already a bound RendererContext, use it,
+        //   else create and return a new one.
+        if (if RENDER_CTX.isBound()) {
+            return RENDER_CTX.get();
         }
         return newContext();
     }
 
 
-   // called from here ...
+    // called from here ...
 
     final RendererContext rdrCtx = getRendererContext();
-    try {
-        return rdCtx.call( () -> {
-            final Path2D.Double p2d = rdrCtx.getPath2D();
-            strokeTo(rdrCtx, p2d, ...);
-            return new Path2D.Double(p2d);
-        });
-     } catch {
-         ...
-     } finally {
-        // recycle the RendererContext instance
-        returnRendererContext(rdrCtx);
-     }
+    rdCtx.call( () -> {
+        // ... graphics operations
+    });
 
 ```
 
@@ -411,9 +403,9 @@ Where `RendererContext.call()` is defined like this:
 
 ```
 
-    // Call r with ctxSL bound to this RendererContext
+    // Call r with RENDER_CTX bound to this RendererContext
     T call(Callable<T> r) throws Exception {
-        return ScopeLocal.where(ctxSL, this).call(r);
+        return ScopeLocal.where(RENDER_CTX, this).call(r);
     }
 ```
 
@@ -454,17 +446,17 @@ a binding scope. So, you won't be able to do something like this
 example, which has a `ThreadLocal` embedded in a `UserTransaction`:
 
 ```
-    public void foo() {
-        UserTransaction utx = getUserTransaction();
+  public void foo() {
+      UserTransaction utx = getUserTransaction();
 
-        // Start a transaction
-        utx.begin();
+      // Start a transaction
+      utx.begin();
 
-        // Do work
+      // Do work
 
-        // Commit it
-        utx.commit();
-    }
+      // Commit it
+      utx.commit();
+  }
 ```
 
 where `UserTransaction` does something like
@@ -492,15 +484,15 @@ instead you might do something like this, where
 `UserTransaction.run()` binds a scope local then calls a lambda:
 
 ```
-    public void foo() {
-        UserTransaction utx = getUserTransaction();
+  public void foo() {
+      UserTransaction utx = getUserTransaction();
 
-        utx.run(() -> {
+      utx.run(() -> {
 
-          // Do work
+        // Do work
 
-        });
-    }
+      });
+  }
 ```
 
 where `UserTransaction.run()` does something like
