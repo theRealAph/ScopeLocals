@@ -31,19 +31,21 @@ flaw in the programming model complicates the implementation because
 an entry in a `ThreadLocal` map has to be a weak reference in order
 not to leak memory when a `ThreadLocal` key becomes unreachable.
 Moreover, the specification of `ThreadLocal` requires every thread to
-maintain a local map from `ThreadLocal` keys to values. But even
-that's not the whole story: threads need two `ThreadLocal` maps, one
-for "normal" thread locals (which are not inherited by child threads)
-and one for `InheritableThreadLocal`s, which are.
+maintain a local map from `ThreadLocal` keys to values. But that's not
+all: threads need two `ThreadLocal` maps, one for "normal" thread
+locals (which are not inherited by child threads) and one for
+`InheritableThreadLocal`s, which are.
 
 The need for scope locals arose from Project Loom, where threads are
 lightweight and numerous.
 
-When a new `Thread` instance is created, its parent's set of
-inheritable thread-local variables is deeply copied. This is necessary
-because a thread's set of thread locals is, by design, mutable, so it
-cannot be shared between threads. Every child thread ends up carrying
-a local copy of its parent's entire set of `InheritableThreadLocal`s.
+Firstly, there's the cost of inheriting a thread's set of
+`InheritableThreadLocal`s. When a new `Thread` instance is created,
+its parent's set of inheritable thread-local variables is deeply
+copied. This is necessary because a thread's set of thread locals is,
+by design, mutable, so it cannot be shared between threads. Every
+child thread ends up carrying a local copy of its parent's entire set
+of `InheritableThreadLocal`s.
 
 We'd like to have a feature that allows per-thread context information
 to be inherited by a thread without an expensive deep-copy operation.
@@ -116,7 +118,7 @@ class Example {
         // but not i, because the scope of i has ended.
         System.out.println(x);
     }
-    
+
     void moreWork(int n) {
         System.out.println(n);
     }
@@ -195,7 +197,7 @@ binding scope, and any methods invoked transitively by them).
     ScopeLocal.where(x, expr1)
               .where(y, expr2)
               .run(() -> ... code that uses x.get() and y.get() ...);
-              
+
     // An attempt to invoke x.get() here would throw an exception
     // because x is not bound to a value outside the lambda invoked
     // by run().
@@ -262,7 +264,7 @@ In summary, scope locals have the following properties:
 * _Simple and fast code_: In most cases a scope-local `x.get()` is as
   fast as a local variable `x`. This is true regardless of how far
   away `x.get()` is from the point that the scope local `x` is bound.
-* _Structured_: These properties also also make it easier for a reader
+* _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
   field of a variable final does.
 
@@ -350,7 +352,7 @@ database with a less-privileged set of credentials, like so:
 
 This "shadowing" only extends until the end of the dynamic
 scope of the lambda above.
- 
+
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
@@ -404,9 +406,9 @@ of a current context, in this case a graphics rendering context:
      }
 
 ```
-    
+
 Where `RendererContext.call()` is defined like this:
-    
+
 ```
 
     // Call r with ctxSL bound to this RendererContext
@@ -448,27 +450,77 @@ ThreadLocal."
 This kind of thing is well suited to the use of a scope local, but
 because scope local bindings are always removed at the end of the
 scope in which they were bound, you must run an entire operation from
-that binding scope. So, you won't be able to do something like this
-example, which has a `ThreadLocal` embedded in a `DatabaseContext`:
+a binding scope. So, you won't be able to do something like this
+example, which has a `ThreadLocal` embedded in a `UserTransaction`:
 
 ```
-try (final DatabaseContext ctx = new DatabaseContext()) {
-  // Within this block, every use of DatabaseContext.current()
-  // returns the current context.
-  doSomething(ctx);
+    public void foo() {
+        UserTransaction utx = getUserTransaction();
+
+        // Start a transaction
+        utx.begin();
+
+        // Do work
+
+        // Commit it
+        utx.commit();
+    }
+```
+
+where `UserTransaction` does something like
+
+```
+class UserTransaction {
+
+  private static final ThreadLocal<UserTransaction> TRANSACTION = new ThreadLocal<>();
+
+  begin() {
+    ... // initialize
+    TRANSACTION.set(this);
+  }
+
+  commit() {
+    ... commit the transaction
+    TRANSACTION.remove();
+  }
+
+  ...
 }
 ```
 
-instead you'll have to do something like this, where
-`DatabaseContext.run()` binds a scope local then calls a lambda:
+instead you might do something like this, where
+`UserTransaction.run()` binds a scope local then calls a lambda:
 
 ```
-DatabaseContext.run(() -> doSomething());
-DatabaseContext.run(() -> doSomethingElse());
+    public void foo() {
+        UserTransaction utx = getUserTransaction();
+
+        utx.run(() -> {
+
+          // Do work
+
+        });
+    }
 ```
 
-that is to say, run an entire operation in the outer scope of the
-scope local binding.
+where `UserTransaction.run()` does something like
+
+```
+class UserTransaction {
+
+  private static final ScopeLocal<UserTransaction> TRANSACTION = ScopeLocal.newInstance();
+
+  void run(Runnable action) {
+    ... // initialize
+    ScopeLocal.where(TRANSACTION, this).run(action);
+    ... commit the transaction
+  }
+
+  ...
+}
+```
+
+that is to say, run an entire operation in a scope local binding.
 
 ### Caches for Non-thread-safe objects that are expensive to create
 
