@@ -32,9 +32,9 @@ an entry in a `ThreadLocal` map has to be a weak reference in order
 not to leak memory when a `ThreadLocal` key becomes unreachable.
 Moreover, the specification of `ThreadLocal` requires every thread to
 maintain a local map from `ThreadLocal` keys to values. That's not
-all: ThreadLocal's locals aren't inherited by subthreads, but
+all: `ThreadLocal`s aren't inherited by subthreads, but
 `InheritableThreadLocal`s are. Therefore, threads need two
-`ThreadLocal` maps, one for `ThreadLocal`s and one for
+thread-local maps, one for `ThreadLocal`s and one for
 `InheritableThreadLocal`s.
 
 The need for scope locals arose from Project Loom, where threads are
@@ -143,9 +143,9 @@ removed. For example, if x in the previous code were dynamically
 scoped then the body of `moreWork` could access `x` despite `x` not
 being passed to it, and `x` not being a field of `Example`.
 
-The core idea of scope locals is to support dynamically scoped values,
-which may be referred to anywhere within the dynamic scope that binds
-a value to a scope local. We'll define a `ScopeLocal` class which does
+The goal of this JEP is to support dynamically scoped values, which
+may be referred to anywhere within the dynamic scope that binds a
+value to a scope local. We'll define a `ScopeLocal` class which does
 this as a library facility, like so:
 
 ```
@@ -154,16 +154,16 @@ class Example {
     // Define a scope local that may be bound to Integer values:
     static final ScopeLocal<Integer> X = ScopeLocal.newInstance();
 
+    void printIt() {
+        // Bind X to the value 5, then run anotherMethod()
+        ScopeLocal.where(X, 5).run(() -> anotherMethod());
+    }
+
     void anotherMethod() {
         for (int i = 0; i < 10; i++) {
             System.out.println(X.get() * i);
         }
         System.out.println(X.get());
-    }
-
-    void printIt() {
-        // Bind X to the value 5, then run anotherMethod()
-        ScopeLocal.where(X, 5).run(() -> anotherMethod());
     }
 }
 ```
@@ -383,12 +383,11 @@ one; if there is, we should use it.
         // RENDER_CTX is a scope local that refers to a context
         // If there's already a bound RendererContext, use it,
         //   else create and return a new one.
-        if (if RENDER_CTX.isBound()) {
+        if (RENDER_CTX.isBound()) {
             return RENDER_CTX.get();
         }
         return newContext();
     }
-
 
     // called from here ...
 
@@ -402,11 +401,15 @@ one; if there is, we should use it.
 Where `RendererContext.call()` is defined like this:
 
 ```
+class RendererContext {
 
     // Call r with RENDER_CTX bound to this RendererContext
     T call(Callable<T> r) throws Exception {
         return ScopeLocal.where(RENDER_CTX, this).call(r);
     }
+
+    // ...
+}
 ```
 
 We'd like to support as many of these use cases as we can, but only if
