@@ -11,25 +11,44 @@ virtual threads.
 
 ## Motivation
 
-It is common in Java programs to need to know something about the
-context in which a method is running. For example, it might be
-necessary to know a transaction context for the currently-executing
-thread for the duration of an EJB call. Or it might be useful for an
-API to be able to check that a caller has appropriate permissions to
-perform an action.
+In Java programs, a method may receive its input from several
+sources. The primary source is the method's arguments, but there are
+others, such as static fields.
 
-If you have some information that is specific to a thread (or a group
-of threads) your choices are to pass that information to every method
-that may need it, or to associate that information with a thread,
-which usually means a `ThreadLocal`.
+Sometimes a method needs information that has not been passed to it
+via its arguments. For example, a security-sensitive method in a
+library might need to check that a caller has appropriate permissions
+to perform an action. Or, it might be necessary to know a transaction
+context for the currently-executing thread, for the duration of that
+transaction.
 
-`ThreadLocal` has some disadvantages when used for this purpose.  It
-is problematic both in terms of both its programming model and its
-implementation within the JDK. It is easy for developers to forget to
-remove a ThreadLocal, which can lead to a long-term memory leak. This
-flaw in the programming model complicates the implementation because
-an entry in a `ThreadLocal` map has to be a weak reference in order
-not to leak memory when a `ThreadLocal` key becomes unreachable.
+In such cases, the context is set (determined?) by the ultimate caller
+of an action.
+
+The Java language has never had a good way to do this. Since Java 1.2,
+ThreadLocals have been the standard way to associate context with a
+thread. Unfortunately, ThreadLocal has some disadvantages when used
+for this purpose.
+
+ThreadLocal is problematic both in terms of both its programming model
+and its implementation within the JDK. Once set, a ThreadLocal is
+_persistent_: that is to say, it is retained for the lifetime of the
+thread or until a method running on that thread calls `remove()`. It
+is unfortunately common for developers to forget to remove a
+`ThreadLocal`, which can lead to a long-term memory leak. Even though
+the program has long since moved on from having any use for an object,
+it will not be garbage collected if no method has called `remove()`.
+
+In practice, thread locals are managed by the `Thread` itself.  Every
+thread must maintain a thread local map. This is an object that maps
+from `ThreadLocal` instances to each thread's copy of that
+thread-local variable. Just as a program associates data with a
+thread-local variable, the Java runtime associates a `ThreadLocal`
+instances with data via a thread local map.
+
+This flaw in the programming model complicates the implementation
+because an entry in a `ThreadLocal` map has to be a weak reference in
+order not to leak memory when a `ThreadLocal` key becomes unreachable.
 Moreover, the specification of `ThreadLocal` requires every thread to
 maintain a local map from `ThreadLocal` keys to values. That's not
 all: `ThreadLocal`s aren't inherited by subthreads, but
