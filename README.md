@@ -149,6 +149,8 @@ association when the scope exits. We call such things scope locals.
 
 This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
 
+< insert code here, with commentary >
+
 A scope local value is a lightweight way to store, transmit, and restore context.
 Context can be anything from a business object to an instance of a system-wide logger.
 
@@ -169,65 +171,6 @@ an entity such as a variable -- is the region of the program within
 which the entity declared by the declaration can be referred to using
 a simple name.
 
-It's usual to say that Java is _lexically scoped_, in the sense that
-variables (and other entities) can be referred to by a simple name
-only within the region of source code in which they're declared. Here,
-for example, `x` is declared in a class `Example`, and may be referred
-to as `x` in any method declared in the same class. We say, therefore,
-that the scope of `x` is the class `Example`:
-
-```
-class Example {
-    private int x = 5;
-
-    void printIt() {
-        System.out.println(x);
-    }
-}
-```
-
-Java also has nested variable scopes inside a method. Here, the
-variable `x` is declared in the outermost scope of the method
-`printIt()`, and the variable `i` is declared in an inner scope, that
-of a `for` loop. In this example, the scope of `x` is that of the
-method `printIt()` from the point where `x` is declared to the closing
-brace of the method:
-
-```
-class Example {
-
-    void work() {
-        int x = 5;
-        for (int i = 0; i < 10; i++) {
-            moreWork(x * i);
-        }
-        // It is is possible to refer to x at this point,
-        // but not i, because the scope of i has ended.
-        System.out.println(x);
-    }
-
-    void moreWork(int n) {
-        System.out.println(n);
-    }
-}
-```
-
-(From the Java Language Specification: the scope of a local variable
-declaration in a block is the rest of the block in which the
-declaration appears, starting with its own initializer and including
-any further declarators to the right in the local variable declaration
-statement.
-https://docs.oracle.com/javase/specs/jls/se17/html/jls-6.html#jls-6.3)
-
-With lexical scoping, the region of the program within which an entity
-is accessible by name is a region of the source code.
-
-With dynamic scoping, the region of the program within which an entity
-is accessible by name is a duration in time, from the point at which
-the name is bound to the entity to the point at which the binding is
-removed. For example, if x in the previous code were dynamically
-scoped then the body of `moreWork` could access `x` despite `x` not
-being passed to it, and `x` not being a field of `Example`.
 
 The goal of this JEP is to support dynamically scoped values, which
 may be referred to anywhere within the dynamic scope that binds a
@@ -636,3 +579,70 @@ implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or
 both. It is better, therefore, not to do that but to give scope locals
 a separate identity from thread locals.
+
+
+
+
+
+
+
+It's usual to say that Java is _lexically scoped_, in the sense that
+variables (and other entities) can be referred to by a simple name
+only within the region of source code in which they're declared. Here,
+for example, `x` is declared in a class `Example`, and may be referred
+to as `x` in any method declared in the same class. We say, therefore,
+that the scope of `x` is the class `Example`:
+
+```
+class Example {
+    private int x = 5;
+
+    void printIt() {
+        System.out.println(x);
+    }
+}
+```
+
+Java also has nested variable scopes inside a method. Here, the
+variable `x` is declared in the outermost scope of the method
+`printIt()`, and the variable `i` is declared in an inner scope, that
+of a `for` loop. In this example, the scope of `x` is that of the
+method `printIt()` from the point where `x` is declared to the closing
+brace of the method:
+
+```
+class Example {
+
+    void work() {
+        int x = 5;
+        for (int i = 0; i < 10; i++) {
+            moreWork(x * i);
+        }
+        // It is is possible to refer to x at this point,
+        // but not i, because the scope of i has ended.
+        System.out.println(x);
+    }
+
+    void moreWork(int n) {
+        System.out.println(n);
+    }
+}
+```
+
+(From the Java Language Specification: the scope of a local variable
+declaration in a block is the rest of the block in which the
+declaration appears, starting with its own initializer and including
+any further declarators to the right in the local variable declaration
+statement.
+https://docs.oracle.com/javase/specs/jls/se17/html/jls-6.html#jls-6.3)
+
+With lexical scoping, the region of the program within which an entity
+is accessible by name is a region of the source code.
+
+With dynamic scoping, the region of the program within which an entity
+is accessible by name is a duration in time, from the point at which
+the name is bound to the entity to the point at which the binding is
+removed. For example, if x in the previous code were dynamically
+scoped then the body of `moreWork` could access `x` despite `x` not
+being passed to it, and `x` not being a field of `Example`.
+
