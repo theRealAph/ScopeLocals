@@ -9,6 +9,22 @@ to replace `ThreadLocal`s for sharing information with a very large
 number of threads. This usage especially applies to Project Loom's
 virtual threads.
 
+## Goals
+
+## Non-Goals
+
+It is not a goal to change the Java Programming Language.
+
+This JEP is only concerned with associating local names and values. It
+doesn't attempt to replace, for example, try-with-resources. It
+doesn't perform cleanup operations when a scope ends, and isn't
+related to a C++-style destructor.
+
+It is not a goal to force virtual threads to use scope locals instead
+of thread local variables. While we expect scope locals to be a better
+fit in many or most cases., thread-local variables may still be useful
+in some contexts,
+
 ## Motivation
 
 In Java programs, a method may receive its input from several
@@ -111,49 +127,23 @@ variables assume mutability. While it makes sese for a parent to share
 context with a million children, it makes no sense at all for them to
 maintain mutable copies of it.
 
-Fundamentally, programming with thread local variables can lead to
-spaghetti-like coding, for example when used to return a hidden value
-from a method to some caller. This leads to a kind of spaghetti code
-whose structure is hard to discern, let alone maintain.
+Thread local variables are prone to abuse. Fundamentally, programming
+with thread local variables can lead to spaghetti-like coding, for
+example when used to return a hidden value from a method to some
+distant caller, far away in a deep call stack. This leads to a kind of
+spaghetti code whose structure is hard to discern, let alone maintain.
 
 Context is a fine thing to be pushed downwards from caller to called
 methods, but a terrible thing when pushed upwards.
 
-
-
-
-
-We'd like to have a feature that allows per-thread context information
-to be inherited by a thread without an expensive deep-copy operation.
-Some kind of immutable data structure fits this need, because the
-inheriting thread needs only to copy a reference to its parent's set
-of values.
-
-
-We'd like this feature to declare the lifetime and the region of
-accessibility of the context information it refers to in an explicit
-way: "between _here_, and _there_". This is in contrast with the
-acessibility of a thread local, which is the current thread and (if
-it's an `InheritableThreadLocal`) any children created by the curret
-thread.
+It is far better, then, to have the structure (of what?) exposed in
+the code, so that it is possible to write maintainable
+programs. Maintainability is more important than programming
+tricks. Reading a program is more important than writing it.
 
 Here we propose a mechanism to associate a value with a name on entry
 to a scope, and automatically (securely, predictably) remove that
 association when the scope exits. We call such things scope locals.
-
-## Non-Goals
-
-It is not a goal to change the Java Programming Language.
-
-This JEP is only concerned with associating local names and values. It
-doesn't attempt to replace, for example, try-with-resources. It
-doesn't perform cleanup operations when a scope ends, and isn't
-related to a C++-style destructor.
-
-It is not a goal to force virtual threads to use scope locals instead
-of thread local variables. While we expect scope locals to be a better
-fit in many or most cases., thread-local variables may still be useful
-in some contexts,
 
 ## Description
 
