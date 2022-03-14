@@ -1,4 +1,4 @@
-# Scope Locals
+# Scope-local variables
 
 ## Summary
 
