@@ -147,6 +147,8 @@ association when the scope exits. We call such things scope locals.
 
 ## Description
 
+* The scope of scope locals does not refer to the lexical scope of its name, but to the dynamic scope of the lifetime of a name binding. 
+
 In Java, the scope of a declaration -- the association of a name with
 an entity such as a variable -- is the region of the program within
 which the entity declared by the declaration can be referred to using
