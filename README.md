@@ -147,7 +147,20 @@ association when the scope exits. We call such things scope locals.
 
 ## Description
 
-* The scope of scope locals does not refer to the lexical scope of its name, but to the dynamic scope of the lifetime of a name binding. 
+A scope local value is a lightweight way to store, transmit, and restore context.
+Context can be anything from a business object to an instance of a system-wide logger.
+
+< A simple credentials example, including the static final field >
+
+Setting up context is the responsibility of the sever framework.
+The server stores the credentials for that thread in a scope local.
+The application logic knows nothing about security, but the JDK will
+check the current thread's permissions by looking in the scope local.
+
+If you have a million virtual threads, the JDK connection needs to check the
+credentials, and this is happening concurrently in a million virtual threads.
+
+The scope of scope locals does not refer to the lexical scope of its name, but to the dynamic scope of the lifetime of a name binding. 
 
 In Java, the scope of a declaration -- the association of a name with
 an entity such as a variable -- is the region of the program within
