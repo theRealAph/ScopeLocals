@@ -147,6 +147,8 @@ association when the scope exits. We call such things scope locals.
 
 ## Description
 
+This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
+
 A scope local value is a lightweight way to store, transmit, and restore context.
 Context can be anything from a business object to an instance of a system-wide logger.
 
