@@ -18,26 +18,44 @@ others, such as static fields.
 Sometimes a method needs information that has not been passed to it
 via its arguments. For example, a security-sensitive method in a
 library might need to check that a caller has appropriate permissions
-to perform an action. Or, it might be necessary to know a transaction
-context for the currently-executing thread, for the duration of that
-transaction.
+to perform an action.
 
-In such cases, the context is set (determined?) by the ultimate caller
-of an action.
+[ It is reasonable to ask why all such information should not be
+passed explicitly as arguments. However, this can be very
+inconvenient. For example, it might be necessary to add logging to a
+library, and adding a current logger to every API entry point would be
+onerous. But it would not just be inconvenient. Having to explicitly
+add loggers everywhere would constrain the evolution of that library's
+API. ]
 
-The Java language has never had a good way to do this. Since Java 1.2,
-ThreadLocals have been the standard way to associate context with a
-thread. Unfortunately, ThreadLocal has some disadvantages when used
-for this purpose.
+In such cases, there is a notion of _context_ that is set by a
+higher-level caller.
 
-ThreadLocal is problematic both in terms of both its programming model
-and its implementation within the JDK. Once set, a ThreadLocal is
-_persistent_: that is to say, it is retained for the lifetime of the
-thread or until a method running on that thread calls `remove()`. It
-is unfortunately common for developers to forget to remove a
+The Java language has never had a really good way to do this. Static
+fields might appear at first glance to be a solution. However, in a
+multi-threaded application, which includes the vast majority of server
+applications, it is useful to associate context with a thread, rather
+than globally. Static fields are global in nature, so won't
+work. Since Java 1.2, ThreadLocals have been the standard way to
+associate context with a thread.
+
+Unfortunately, ThreadLocals have some disadvantages when used for this
+purpose.
+
+In essence, a `ThreadLocal` is a key that may be used to set and get
+the current thread's copy of a thread-local variable. Once set in a
+thread, its value my be returned by `get()`. Once set, a ThreadLocal
+is _persistent_: that is to say, it is retained for the lifetime of
+the thread or until a method running on that thread calls `remove()`
+
+It is unfortunately common for developers to forget to remove a
 `ThreadLocal`, which can lead to a long-term memory leak. Even though
 the program has long since moved on from having any use for an object,
-it will not be garbage collected if no method has called `remove()`.
+it will not be garbage collected if no method has called
+`remove()`. 
+
+It would be better if the context associated with a thread were to be
+cleaned up automatically.
 
 In practice, thread locals are managed by the `Thread` itself.  Every
 thread must maintain a thread local map. This is an object that maps
@@ -46,31 +64,71 @@ thread-local variable. Just as a program associates data with a
 thread-local variable, the Java runtime associates a `ThreadLocal`
 instances with data via a thread local map.
 
-This flaw in the programming model complicates the implementation
-because an entry in a `ThreadLocal` map has to be a weak reference in
-order not to leak memory when a `ThreadLocal` key becomes unreachable.
-Moreover, the specification of `ThreadLocal` requires every thread to
-maintain a local map from `ThreadLocal` keys to values. That's not
-all: `ThreadLocal`s aren't inherited by subthreads, but
-`InheritableThreadLocal`s are. Therefore, threads need two
-thread-local maps, one for `ThreadLocal`s and one for
-`InheritableThreadLocal`s.
-
 The need for scope locals arose from Project Loom, where threads are
-lightweight and numerous.
+cheap and plentiful, rather than expensive and scarce. If you only
+have a few hundred platform threads, maintaining a thread local map
+seems viable. However, if you have _millions_ of threads, maintaining
+millions of thread local maps becomes a significant burden, both in
+terms of creating the maps and the memory they occupy.
 
-Firstly, there's the cost of inheritable thread locals. When a new
-`Thread` instance is created, its parent's set of inheritable
-thread-local variables is deeply copied. This is necessary because a
-thread's set of thread locals is, by design, mutable, so it cannot be
-shared between threads. Every child thread ends up carrying a local
-copy of its parent's entire set of `InheritableThreadLocal`s.
+Some developers wishing to utilize hardware to its fullest have given
+up the thread-per-request model in favor of a thread-sharing
+model. Instead of a request being handled by one thread from start to
+finish, the request-handling code returns its thread to a pool when it
+waits for an I/O operation to complete so that the thread can service
+other requests. This fine-grained sharing of threads (code only holds
+on to a thread when it performs calculations, not when it waits for
+I/O) allows a high number of concurrent operations without consuming a
+high number of threads. In this model, tasks are not bound to any
+particular thread. Whenever an I/O operation completes, a thread is
+taken from a pool and that thread is used for whichever task became
+ready.
+
+A task that skips from thread to thread is at odds with the idea that
+task state can be kept on a thread.
+
+In addition, thread local variables have a feature, _inheritability_,
+that is predicated on a relatively small set of threads sharing domain
+objects. When a new `Thread` instance is created, its parent's set of
+inheritable thread-local variables is deeply copied. This is necessary
+because a thread's set of thread locals is, by design, mutable, so it
+cannot be shared between threads. Every child thread ends up carrying
+a local copy of its parent's entire set of `InheritableThreadLocal`s.
+
+With Project Loom's virtual threads you can keep your beloved
+thread-per-request model.  Wouldn't it be terrible if virtual threads
+carried over the thread locals heavyweight model of inheritability?
+
+It would certainly be useful for these numerous cheap and plentiful
+threads to be able to access some context from their parent. For
+example, they may share a logger on an output stream. Perhaps they may
+share some kind of security policy too.
+
+For such uses we want sharing, but we do not want mutability. It
+should be popssible for a child thread to share its parent's context,
+but it's not necessary to mutate it. In contrast, thread local
+variables assume mutability. While it makes sese for a parent to share
+context with a million children, it makes no sense at all for them to
+maintain mutable copies of it.
+
+Fundamentally, programming with thread local variables can lead to
+spaghetti-like coding, for example when used to return a hidden value
+from a method to some caller. This leads to a kind of spaghetti code
+whose structure is hard to discern, let alone maintain.
+
+Context is a fine thing to be pushed downwards from caller to called
+methods, but a terrible thing when pushed upwards.
+
+
+
+
 
 We'd like to have a feature that allows per-thread context information
 to be inherited by a thread without an expensive deep-copy operation.
 Some kind of immutable data structure fits this need, because the
 inheriting thread needs only to copy a reference to its parent's set
 of values.
+
 
 We'd like this feature to declare the lifetime and the region of
 accessibility of the context information it refers to in an explicit
@@ -85,15 +143,17 @@ association when the scope exits. We call such things scope locals.
 
 ## Non-Goals
 
+It is not a goal to change the Java Programming Language.
+
 This JEP is only concerned with associating local names and values. It
 doesn't attempt to replace, for example, try-with-resources. It
 doesn't perform cleanup operations when a scope ends, and isn't
 related to a C++-style destructor.
 
-It is not a goal to replace existing usages of thread-local variables
-without code changes. Thread-local variables may still be useful in
-some contexts, but we expect scope locals to be a better fit in many
-or most cases.
+It is not a goal to force virtual threads to use scope locals instead
+of thread local variables. While we expect scope locals to be a better
+fit in many or most cases., thread-local variables may still be useful
+in some contexts,
 
 ## Description
 
