@@ -31,6 +31,8 @@ In Java programs, a method may receive its input from several
 sources. The primary source is the method's arguments, but there are
 others, such as static fields.
 
+### Contexts
+
 Sometimes a method needs information that has not been passed to it
 via its arguments. For example, a security-sensitive method in a
 library might need to check that a caller has appropriate permissions
@@ -47,13 +49,19 @@ API. ]
 In such cases, there is a notion of _context_ that is set by a
 higher-level caller.
 
+### Not static fields!
+
 The Java language has never had a really good way to do this. Static
 fields might appear at first glance to be a solution. However, in a
 multi-threaded application, which includes the vast majority of server
 applications, it is useful to associate context with a thread, rather
 than globally. Static fields are global in nature, so won't
-work. Since Java 1.2, ThreadLocals have been the standard way to
-associate context with a thread.
+work.
+
+### Thread local variables
+
+Since Java 1.2, ThreadLocals have been the standard way to associate
+context with a thread.
 
 Unfortunately, ThreadLocals have some disadvantages when used for this
 purpose.
@@ -71,7 +79,9 @@ it will not be garbage collected if no method has called
 `remove()`. 
 
 It would be better if the context associated with a thread were to be
-cleaned up automatically.
+cleaned up automatically. Also, having to call `remove()` on a
+`ThreadLocal` to clean it up when it's no longer in use is somewhat
+antithetical to the way that Java usually works.
 
 In practice, thread locals are managed by the `Thread` itself.  Every
 thread must maintain a thread local map. This is an object that maps
@@ -80,12 +90,25 @@ thread-local variable. Just as a program associates data with a
 thread-local variable, the Java runtime associates a `ThreadLocal`
 instances with data via a thread local map.
 
+### Virtual threads versus thread local variables
+
 The need for scope locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
 have a few hundred platform threads, maintaining a thread local map
 seems viable. However, if you have _millions_ of threads, maintaining
 millions of thread local maps becomes a significant burden, both in
 terms of creating the maps and the memory they occupy.
+
+Instead of hundreds of platform threads you have millions of virtual
+threads. Because virtual threads are still threads, it is legitimate
+to for a virtual thread to carry thread-local variables. However, a
+different model of context is desirable when programming with virtual
+threads.
+
+Two problems arise from thread local variables on virtual threads:
+
+* Inheritability
+* Every thread must maintain a thread-local map
 
 Some developers wishing to utilize hardware to its fullest have given
 up the thread-per-request model in favor of a thread-sharing
@@ -115,6 +138,18 @@ With Project Loom's virtual threads you can keep your beloved
 thread-per-request model.  Wouldn't it be terrible if virtual threads
 carried over the thread locals heavyweight model of inheritability?
 
+Platform Threads are:
+
+* Long-running
+* Heavyweight
+* Pooled
+
+Virtual Threads are:
+
+* Short-running
+* Lightweight
+* Singular (?)
+
 It would certainly be useful for these numerous cheap and plentiful
 threads to be able to access some context from their parent. For
 example, they may share a logger on an output stream. Perhaps they may
@@ -127,49 +162,140 @@ variables assume mutability. While it makes sese for a parent to share
 context with a million children, it makes no sense at all for them to
 maintain mutable copies of it.
 
+In summary, scope locals fix these problems with:
+
+* Sharing, not mutation
+* Automatic memory management, not manual
+
+### The problem with unconstrained mutability
+
 Thread local variables are prone to abuse. Fundamentally, programming
 with thread local variables can lead to spaghetti-like coding, for
 example when used to return a hidden value from a method to some
-distant caller, far away in a deep call stack. This leads to a kind of
-spaghetti code whose structure is hard to discern, let alone maintain.
+distant caller, far away in a deep call stack. This leads to code
+whose structure is hard to discern, let alone maintain.
 
-Context is a fine thing to be pushed downwards from caller to called
-methods, but a terrible thing when pushed upwards.
+While using a thread local variable to store context seems reasonable
+at first, it suffers from unconstrained mutability. Any callee with
+access to `ThreadLocal.get()` also can call `set()` or even
+`remove()`. This results in a kind of "action at a distance" where the
+relationship between a caller which sets the context is impossible to
+determine from the code alone.
 
 It is far better, then, to have the structure (of what?) exposed in
 the code, so that it is possible to write maintainable
 programs. Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
 
+Context is a fine thing to be pushed downwards from caller to called
+methods, but a terrible thing when pushed upwards.
+
+## Description
+
+### Orphan paragraphs
+
+Scope locals are
+
+* Not global
+* Not per-thread
+* Per a constrained slice of a thread
+
+Global context is bad, per thread is better. Scope locals are an
+intra-thread context mechanism that doesn't suffer from these
+problems.
+
+Dynamically scoped variables have been around for a long time. It's
+time to being them to Java.
+
+Dynamic scoping enables context to flow through the program from
+caller to callee, to their callee, and so on. They are a way to have
+invisible parameters passed through every method invocation. These
+parameters are then usable in the dynamic scope of, say, request
+handlers.
+
+VTs - server code. They are small, shallow, and short lived.  The call
+stack of that code is a natural boundary - it just contains the
+business logic.  It needs to looks things up in the context of the
+framework, and it needs to call into the JDK, which needs to know
+e.g. the permissions of the caller.
+
+Setting up context is the responsibility of the sever framework.  The
+server stores the credentials for a thread in a scope local.  The
+application logic knows nothing about security, but the JDK will check
+the current thread's permissions by looking in the scope local.
+
+If you have a million virtual threads, the JDK connection needs to
+check the credentials, and this is happening concurrently in a million
+virtual threads.
+
+Scope locals are like thread locals, but with
+
+* Better memory management
+* Better inheritability
+
+In summary, scope local is a mechanism which exploits the idea of
+dynamic scoping by allowing a variable to provide useful context to a
+program, and to be unassociated automatically. Such variables would
+effectively be invisible parameters passed through every method in the
+call stack. This will lead to more reliable multi-threaded programs.
+
+### For example
+
 Here we propose a mechanism to associate a value with a name on entry
 to a scope, and automatically (securely, predictably) remove that
 association when the scope exits. We call such things scope locals.
 
-## Description
-
 This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
-
-< insert code here, with commentary >
 
 A scope local value is a lightweight way to store, transmit, and restore context.
 Context can be anything from a business object to an instance of a system-wide logger.
 
-< A simple credentials example, including the static final field >
+The following example uses a scope local to make credentials available
+to callees.
 
-Setting up context is the responsibility of the sever framework.
-The server stores the credentials for that thread in a scope local.
-The application logic knows nothing about security, but the JDK will
-check the current thread's permissions by looking in the scope local.
+```
+class DatabaseConnector {
 
-If you have a million virtual threads, the JDK connection needs to check the
-credentials, and this is happening concurrently in a million virtual threads.
+    // Declare a scope local to hold credentials for the current thread
+    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
 
-The scope of scope locals does not refer to the lexical scope of its name, but to the dynamic scope of the lifetime of a name binding. 
+    Credentials creds = newCredentials();
+    
+    // Bind the scope local CREDENTIALS in the current thread
+    // to our new credentials
+    ScopeLocal.where(DatabaseConnector.CREDENTIALS, creds).run(() -> {
+        :
+        Connection connection = connectDatabase();
+        :
+    });
+
+    Connection connectDatabase() {
+        // Read the caller's credentials to see if they have
+        // sufficient permissions for this action.
+        if (DatabaseConnector.CREDENTIALS.get().s != "MySecret") {
+            throw new SecurityException("No dice, kid!");
+        }
+        return new Connection();
+    }
+}
+```
+
+In this example `DatabaseConnector.CREDENTIALS.get()` has a hidden
+parameter: the current thread. The `ScopeLocal.get()` operation could
+be written as
+`Thread.currentThread().getScopeLocal(DatabaseConnector.CREDENTIALS)`,
+which more clearly shows that a `ScopeLocal` instance is a key, which
+is used to look up the current thread's incarnation of a scope local.
 
 In Java, the scope of a declaration -- the association of a name with
 an entity such as a variable -- is the region of the program within
 which the entity declared by the declaration can be referred to using
 a simple name.
+
+The scope of scope locals does not refer to the lexical scope of its
+name, but to the dynamic scope of the lifetime of a name binding.
+
+
 
 
 The goal of this JEP is to support dynamically scoped values, which
@@ -342,27 +468,6 @@ you want:
 ```
 
 ### Securely passing credentials
-
-The following example uses a scope local to make credentials available
-to callees.
-
-```
-    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
-
-    Credentials creds = ...
-    ScopeLocal.where(CREDENTIALS, creds).run(() -> {
-        :
-        Connection connection = connectDatabase();
-        :
-    });
-
-    Connection connectDatabase() {
-        if (CREDENTIALS.get().s != "MySecret") {
-            throw new SecurityException("No dice, kid!");
-        }
-        return new Connection();
-    }
-```
 
 ### Shadowing
 
