@@ -239,6 +239,11 @@ program, and to be unassociated automatically. Such variables would
 effectively be invisible parameters passed through every method in the
 call stack. This will lead to more reliable multi-threaded programs.
 
+- One declaration, that introduces the name X, with lexical scope.
+- 400,000 variables, one per thread, each variable having its own dynamic extent flowing through callees, and callees of callees, and callees of callees of callees.
+- Each variable has one value as usual.
+Write out X_1, X_2, etc
+
 ### For example
 
 This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
