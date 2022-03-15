@@ -241,10 +241,6 @@ call stack. This will lead to more reliable multi-threaded programs.
 
 ### For example
 
-Here we propose a mechanism to associate a value with a name on entry
-to a scope, and automatically (securely, predictably) remove that
-association when the scope exits. We call such things scope locals.
-
 This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
 
 A scope local value is a lightweight way to store, transmit, and restore context.
