@@ -63,7 +63,7 @@ work.
 Since Java 1.2, ThreadLocals have been the standard way to associate
 context with a thread.
 
-<Story about thread local maps>
+(Story about thread local maps here.)
 
 Unfortunately, ThreadLocals have some disadvantages when used for this
 purpose.
@@ -115,8 +115,8 @@ Because virtual threads are still threads, it is legitimate to for a
 virtual thread to carry thread-local variables. The short-running
 nature of virtual threads means that the crap programming model of
 thread locals doesn't matter because it doesn't matter when they die
-at a prodigous rate - remove() isn't necessary when a thread, virtual
-or not, terminates.
+at a prodigous rate - `remove()` isn't necessary when a thread,
+virtual or not, terminates.
 
 Unfortunately, thread locals present another problem in the era of
 virtual threads, because thread locals may be inheritable.
