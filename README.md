@@ -135,61 +135,6 @@ variables assume mutability. While it makes sese for a parent to share
 context with a million children, it makes no sense at all for them to
 maintain mutable copies of it.
 
-The need for extent locals arose from Project Loom, where threads are
-cheap and plentiful, rather than expensive and scarce. If you only
-have a few hundred platform threads, maintaining a thread local map
-seems viable. However, if you have _millions_ of threads, maintaining
-millions of thread local maps becomes a significant burden, both in
-terms of creating the maps and the memory they occupy.
-
-Instead of hundreds of platform threads you have millions of virtual
-threads. However, a different model of context is desirable when
-programming with virtual threads.
-
-Two problems arise from thread local variables on virtual threads:
-
-* Inheritability
-* Every thread must maintain a thread-local map
-
-Some developers wishing to utilize hardware to its fullest have given
-up the thread-per-request model in favor of a thread-sharing
-model. Instead of a request being handled by one thread from start to
-finish, the request-handling code returns its thread to a pool when it
-waits for an I/O operation to complete so that the thread can service
-other requests. This fine-grained sharing of threads (code only holds
-on to a thread when it performs calculations, not when it waits for
-I/O) allows a high number of concurrent operations without consuming a
-high number of threads. In this model, tasks are not bound to any
-particular thread. Whenever an I/O operation completes, a thread is
-taken from a pool and that thread is used for whichever task became
-ready.
-
-A task that skips from thread to thread is at odds with the idea that
-task state can be kept on a thread.
-
-With Project Loom's virtual threads you can keep your beloved
-thread-per-request model.  Wouldn't it be terrible if virtual threads
-carried over the thread locals heavyweight model of inheritability?
-
-### Extents
-
-In the JVM specification, an extent is defined thusly:
-
-"It is often useful to describe the situation where, in a given
-thread, a given method m1 invokes a method m2, which invokes a method
-m3, and so on until the method invocation chain includes the current
-method mn. None of m1..mn have yet completed; all of their frames are
-still stored on the Java Virtual Machine stack (2.5.2). Collectively,
-their frames are called an _extent_. The frame for the current method
-mn is called the _top most frame_ of the extent. The frame for the
-given method m1 is called the _bottom most frame_ of the extent."
-
-(That is to say, m1's extent is the set of methods m1 invokes, and any
-methods invoked transitively by them.)
-
-In this JEP we'll propose a new construct, the extent local variable,
-which is bounded by (defined in? during?) a specific extent.
-
 ### The problem with unconstrained mutability
 
 [ TLs being mutable fies in the face of the repeated advice in
@@ -221,6 +166,41 @@ tricks. Reading a program is more important than writing it.
 
 Context is a fine thing to be pushed downwards from caller to called
 methods, but a terrible thing when pushed upwards.
+
+The need for extent locals arose from Project Loom, where threads are
+cheap and plentiful, rather than expensive and scarce. If you only
+have a few hundred platform threads, maintaining a thread local map
+seems viable. However, if you have _millions_ of threads, maintaining
+millions of thread local maps becomes a significant burden, both in
+terms of creating the maps and the memory they occupy.
+
+Instead of hundreds of platform threads you have millions of virtual
+threads. However, a different model of context is desirable when
+programming with virtual threads.
+
+With Project Loom's virtual threads you can keep your beloved
+thread-per-request model.  Wouldn't it be terrible if virtual threads
+carried over the thread locals heavyweight model of inheritability?
+
+### Extents
+
+In the JVM specification, an extent is defined thusly:
+
+"It is often useful to describe the situation where, in a given
+thread, a given method m1 invokes a method m2, which invokes a method
+m3, and so on until the method invocation chain includes the current
+method mn. None of m1..mn have yet completed; all of their frames are
+still stored on the Java Virtual Machine stack (2.5.2). Collectively,
+their frames are called an _extent_. The frame for the current method
+mn is called the _top most frame_ of the extent. The frame for the
+given method m1 is called the _bottom most frame_ of the extent."
+
+(That is to say, m1's extent is the set of methods m1 invokes, and any
+methods invoked transitively by them.)
+
+In this JEP we'll propose a new construct, the extent local variable,
+which is bounded by (defined in? during?) a specific extent.
+
 
 In summary, extent locals fix these problems with:
 
