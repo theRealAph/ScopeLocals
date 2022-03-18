@@ -249,8 +249,7 @@ class ServerFramework {
         ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
                    .run(() -> { ...                
                                 var connection = connectDatabase();
-                                ...
-                                });
+                                ... });
     }
 
     Connection connectDatabase() {
