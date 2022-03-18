@@ -204,14 +204,16 @@ In summary, extent locals fix these problems with:
 In this JEP we propose an extent local variable. An extent local
 variable is like a thread local variable that can't be mutated.
 
-It would be ideal if the Java Platform provided a way to have per
-thread context for millions of virtual threads that is immutable by
-default and, given the low cost of forking virtual threads,
-inheritable. Because these ideal per thread variables are immutable,
-thir data can be easily shared by child threads, rather than copied to
-child threads.
+An extent local variable is a per thread vairable that allows context
+to be set in a caller and read by callees. Unlike a thread local
+variable, an extent local variable is immutable. Context can be
+anything from a business object to an instance of a system-wide
+logger.
 
-In the JVM specification, an extent is defined thusly:
+The term extent local derives from the idea of extent in the Java
+Virtual Machine.
+
+The JVM specification describes an extent as follows:
 
 "It is often useful to describe the situation where, in a given
 thread, a given method m1 invokes a method m2, which invokes a method
@@ -225,12 +227,6 @@ given method m1 is called the _bottom most frame_ of the extent."
 (That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.)
 
-In this JEP we'll propose a new construct, the extent local variable,
-which is bounded by (defined in? during?) a specific extent.
-
-An extent local value is a lightweight way to store, transmit, and
-restore context.  Context can be anything from a business object to an
-instance of a system-wide logger.
 
 The value associated with an extent local variable is defined in the
 bottom most frame of an extent, and is accessible in every frame of
