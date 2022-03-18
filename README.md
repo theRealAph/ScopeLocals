@@ -22,7 +22,7 @@ related to a C++-style destructor.
 
 It is not a goal to force virtual threads to use extent locals instead
 of thread local variables. While we expect extent locals to be a better
-fit in many or most cases., thread-local variables may still be useful
+fit in many or most cases, thread-local variables may still be useful
 in some contexts,
 
 ## Motivation
@@ -92,6 +92,30 @@ instances with data via a thread local map.
 
 ### Virtual threads versus thread local variables
 
+Platform Threads are:
+
+* Long-running
+* Heavyweight
+* Pooled
+
+Virtual Threads are:
+
+* Short-running
+* Lightweight
+* Singular (?)
+
+It would certainly be useful for these numerous cheap and plentiful
+threads to be able to access some context from their parent. For
+example, they may share a logger on an output stream. Perhaps they may
+share some kind of security policy too.
+
+For such uses we want sharing, but we do not want mutability. It
+should be popssible for a child thread to share its parent's context,
+but it's not necessary to mutate it. In contrast, thread local
+variables assume mutability. While it makes sese for a parent to share
+context with a million children, it makes no sense at all for them to
+maintain mutable copies of it.
+
 The need for extent locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
 have a few hundred platform threads, maintaining a thread local map
@@ -128,6 +152,7 @@ task state can be kept on a thread.
 
 In addition, thread local variables have a feature, _inheritability_,
 that is predicated on there being a relatively small set of threads
+
 sharing domain objects. When a new `Thread` instance is created, its
 parent's set of inheritable thread-local variables is deeply
 copied. This is necessary because a thread's set of thread locals is,
@@ -138,30 +163,6 @@ of `InheritableThreadLocal`s.
 With Project Loom's virtual threads you can keep your beloved
 thread-per-request model.  Wouldn't it be terrible if virtual threads
 carried over the thread locals heavyweight model of inheritability?
-
-Platform Threads are:
-
-* Long-running
-* Heavyweight
-* Pooled
-
-Virtual Threads are:
-
-* Short-running
-* Lightweight
-* Singular (?)
-
-It would certainly be useful for these numerous cheap and plentiful
-threads to be able to access some context from their parent. For
-example, they may share a logger on an output stream. Perhaps they may
-share some kind of security policy too.
-
-For such uses we want sharing, but we do not want mutability. It
-should be popssible for a child thread to share its parent's context,
-but it's not necessary to mutate it. In contrast, thread local
-variables assume mutability. While it makes sese for a parent to share
-context with a million children, it makes no sense at all for them to
-maintain mutable copies of it.
 
 ### Extents
 
