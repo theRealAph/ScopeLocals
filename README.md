@@ -259,6 +259,16 @@ variable. Fortunately, the extent local variable is inheritable such
 that its value is usable by a child thread. The server framework
 can easily achieve this.
 
+Even though the client might be able to re-bind
+ServerFramework.CREDENTIALS, there should be no way to forge
+legitimate crecentials, because the payload class doesn't allow
+unprivileged classes to create new credentials.
+
+The example above we show the user code physically within the server
+framework class. Therefore the notional user code can access the
+CREDENTIALS and attempt to rebind it. However, in real life we
+couldn't.
+
 The `ExtentLocal.get()` operation could be thought of as
 `Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
 which clearly shows that a `ExtentLocal` instance is a key used
@@ -281,76 +291,7 @@ final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
 operation. [ Do we need that sentence? ]
 
-```
-  // Declare extent locals x and y
-  static final ExtentLocal<MyType> x = ExtentLocal.newInstance();
-  static final ExtentLocal<MyType> y = ExtentLocal.newInstance();
-
-  ... much later
-
-  {
-    ExtentLocal.where(x, expr1)
-              .where(y, expr2)
-              .run(() -> ... code that uses x.get() and y.get() ...);
-
-    // An attempt to invoke x.get() here would throw an exception
-    // because x is not bound to a value outside the lambda invoked
-    // by run().
-  }
-```
-
-In this example, `run()` is said to "bind" `x` and `y` to the results
-of evaluating `expr1` and `expr2` respectively. While the method
-`run()` is executing, any calls to `x.get()` and `y.get()` return the
-values that have been bound to them. The methods called from `run()`,
-and any methods called by them, comprise the extent of `run()`.
-
-Please note that the code that uses `x.get()` and `y.get()` may be a
-very long way away, for example in a callback somewhere. Imagine a
-complex system, with many intervening method calls, between the point
-where an extent local is bound to a value and the point where that value
-is retrieved. Like so:
-
-```
-    void run1() {
-        ExtentLocal.where(x, new MyType("Jill"))
-                  .where(y, new MyType("Sofia"))
-                  .run(() -> m());
-    }
-    void m() {
-        n();
-    }
-    void n() {
-        o();
-    }
-    void o() {
-        System.out.println("My name is " + x.get().toString());
-        // Prints "My name is Jill"
-    }
-```
-
-But when called in a different context, we see a different value for
-`x.get()`
-
-```
-    void run2() {
-        ExtentLocal.where(x, new MyType("Helena"))
-                  .where(y, new MyType("Henri"))
-                  .run(() -> p());
-    }
-    void p() {
-        q();
-    }
-    void q() {
-        r();
-    }
-    void r() {
-        System.out.println("My name is " + x.get().toString());
-        // Prints "My name is Helena"
-    }
-```
-
-In summary, extent locals have the following properties:
+Extent locals have the following properties:
 
 * _Locally-defined extent_: The values of `x` and `y` are only bound
   in the extent of `run()`.
