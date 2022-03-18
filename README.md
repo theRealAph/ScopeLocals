@@ -242,28 +242,24 @@ an invisible parameter to represent the caller's credentials, even
 though the caller itself did not pass them.
 
 ```
-class DatabaseConnector {
+class ServerFramework {
 
-    // Declare an extent local to hold credentials for the current thread
     private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
 
-    Credentials creds = newCredentials();
-    
-    // Bind the extent local CREDENTIALS in the current thread
-    // to our new credentials
-    // The `run()` method here is the bottom most frame of the extent
-    // in which `DatabaseConnector.CREDENTIALS.get()` will return
-    // `creds`.
-    ExtentLocal.where(DatabaseConnector.CREDENTIALS, creds).run(() -> {
-        :
-        Connection connection = connectDatabase();
-        :
-    });
+    void processRequest() {
+
+      ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
+        .run(() -> {
+          :
+          Connection connection = connectDatabase();
+          :
+        });
+    }
 
     Connection connectDatabase() {
         // Read the caller's credentials to see if they have
         // sufficient permissions for this action.
-        if (DatabaseConnector.CREDENTIALS.get().s != "MySecret") {
+        if ServerFramework.CREDENTIALS.get().s != "MySecret") {
             throw new SecurityException("No dice, kid!");
         }
         return new Connection();
