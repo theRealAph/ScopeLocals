@@ -247,11 +247,10 @@ class ServerFramework {
 
     void processRequest() {
         ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
-                   .run(() -> {
-            ...
-            Connection connection = connectDatabase();
-            ...
-        });
+                   .run(() -> { ...                
+                                var connection = connectDatabase();
+                                ...
+                                });
     }
 
     Connection connectDatabase() {
