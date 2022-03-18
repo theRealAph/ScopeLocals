@@ -229,8 +229,15 @@ that extent.
 
 ### For example
 
-The following example uses an extent local to make credentials available
-to callees.
+The following example uses an extent local variable to make
+credentials available to callees.
+
+The ultimate caller is the server framework. It is resoponsible for
+initializing an extent local variable with some credentials. The
+framework then runs some piece of code (supplied by the user) thread
+that connects to a database. The connectDatabase() method then uses
+the credentials set by it's caller's caller to determine if its caller
+to access the database.
 
 ```
 class DatabaseConnector {
