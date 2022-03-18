@@ -171,7 +171,7 @@ context is mutable by callees.
 It would be ideal if the Java Platform provided a way to have per
 thread context for millions of virtual threads that is immutable by
 default and, given the low cost of forking virtual threads,
-inheritable. Because these ideal thread local variables are immutable,
+inheritable. Because these ideal per thread variables are immutable,
 thir data can be easily shared by child threads, rather than copied to
 child threads.
 
