@@ -201,7 +201,15 @@ In summary, extent locals fix these problems with:
 
 ## Description
 
-In this JEP we propose an extent local variable.
+In this JEP we propose an extent local variable. An extent local
+variable is like a thread local variable that can't be mutated.
+
+It would be ideal if the Java Platform provided a way to have per
+thread context for millions of virtual threads that is immutable by
+default and, given the low cost of forking virtual threads,
+inheritable. Because these ideal per thread variables are immutable,
+thir data can be easily shared by child threads, rather than copied to
+child threads.
 
 In the JVM specification, an extent is defined thusly:
 
