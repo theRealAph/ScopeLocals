@@ -242,13 +242,22 @@ class ServerFramework {
 
     Connection connectDatabase() {
         // Use the caller's credentials
-        if (acceptable(ServerFramework.CREDENTIALS.get())) {
-            throw new SecurityException("No dice, kid!");
+        if (! ServerFramework.CREDENTIALS.get().equals ...) {
+            throw new SecurityException("Invalid credentials");
         }
         return new Connection();
     }
 }
 ```
+
+A server frameowrk may configure the behaviour of run so that the user
+code can be run in a new virtual thread. This witnesses a
+thread-per-request model. Starting a new thread means that
+connectDatabase() will run in a different fread than processrequest().
+Plainly, the body of connectDatabase() need to thuse the extent local
+variable. Fortunately, the extent local variable is inheritable such
+that its value is usable by a child thread. The server framework
+can easily achieve this.
 
 The `ExtentLocal.get()` operation could be thought of as
 `Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
@@ -258,7 +267,14 @@ to look up the current thread's incarnation of an extent local.
 An extent local acquires (we say: _is bound to_) a value on entry to a
 extent; when that extent terminates, the previous value (or none) is
 restored. In this case, the extent of `X`'s binding is the duration of
-the Lambda invoked by `run()`.
+the Lambda invoked by `run()`. In the example above, the extent
+unfolds from process request, through a lambda, to
+connectDatabase(). The frame for connectDatabase() is the topmost
+frame; the frame for processRequest() is the bottom most frame. If
+connectDatbase() called more methods, then those methods would also be
+able to use the extent local variable to get the needful. None of the
+methods in the extent can mutate the extent local variable so that it
+holds different credentials.
 
 One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
