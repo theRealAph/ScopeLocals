@@ -63,7 +63,7 @@ work.
 Since Java 1.2, ThreadLocals have been the standard way to associate
 context with a thread.
 
-An `ExtentLocal` instance such as `X` above is a key that is used to
+An `ThreadLocal` instance such as `X` above is a key that is used to
 look up a value in the current thread. Despite `X` being declared
 static in class `Example`, there is _not_ exactly one incarnation of
 the field shared across all instances of Foo; instead, there are
@@ -179,7 +179,9 @@ thread context for millions of virtual threads that is immutable by
 default and, given the low cost of forking virtual threads,
 inheritable. Because these ideal per thread variables are immutable,
 thir data can be easily shared by child threads, rather than copied to
-child threads.
+child threads. Thread local variables were the 90s realization of per
+thread variabels; we need a better realization of per thread vairables
+for the modern era.
 
 Because these ideal per thread variables are immutable and
 lightweight, they align well with the thread-per-request model given
