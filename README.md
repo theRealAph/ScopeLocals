@@ -208,9 +208,7 @@ anything from a business object to an instance of a system-wide
 logger.
 
 The term extent local derives from the idea of extent in the Java
-Virtual Machine.
-
-The JVM specification describes an extent as follows:
+Virtual Machine. The JVM specification describes an extent as follows:
 
 "It is often useful to describe the situation where, in a given
 thread, a given method m1 invokes a method m2, which invokes a method
