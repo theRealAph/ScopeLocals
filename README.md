@@ -276,15 +276,10 @@ class ServerFramework {
 }
 ```
 
-
-
-[ Should this paragraph be elsewhere? ]
-In this example `DatabaseConnector.CREDENTIALS.get()` has a hidden
-parameter: the current thread. The `ExtentLocal.get()` operation could
-be written as
+The `ExtentLocal.get()` operation could be thought of as
 `Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
-which more clearly shows that a `ExtentLocal` instance is a key, which
-is used to look up the current thread's incarnation of an extent local.
+which more clearly shows that a `ExtentLocal` instance is a key used
+to look up the current thread's incarnation of an extent local.
 
 
 ```
