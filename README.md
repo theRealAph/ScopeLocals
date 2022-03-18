@@ -174,15 +174,13 @@ method mn. None of m1..mn have yet completed; all of their frames are
 still stored on the Java Virtual Machine stack (2.5.2). Collectively,
 their frames are called an _extent_. The frame for the current method
 mn is called the _top most frame_ of the extent. The frame for the
-given method m1 is called the _bottom most frame+ of the extent"
+given method m1 is called the _bottom most frame_ of the extent."
 
-In this JEP we propose a new construct, the extent local variable,
-which is bounded by a specific extent.
+(That is to say, m1's extent is the set of methods m1 invokes, and any
+methods invoked transitively by them.)
 
-In summary, extent locals fix these problems with:
-
-* Sharing, not mutation
-* Automatic memory management, not manual
+In this JEP we'll propose a new construct, the extent local variable,
+which is bounded by (defined in? during?) a specific extent.
 
 ### The problem with unconstrained mutability
 
@@ -192,7 +190,8 @@ _Effective Java_ to minimize mutability.
 _Effective Java_, Item 8: Avoid finalizers and cleaners, by using
 try-with-resources and try...finally. Item 17: minimize mutability:
 don't provide methods that modify the object's state. Yet
-`ThreadLocal` depends on these things to minimize and avoid. ]
+`ThreadLocal` depends on these things we're advised to minimize and
+avoid. ]
 
 Thread local variables are prone to abuse. Fundamentally, programming
 with thread local variables can lead to spaghetti-like coding, for
@@ -215,6 +214,11 @@ tricks. Reading a program is more important than writing it.
 Context is a fine thing to be pushed downwards from caller to called
 methods, but a terrible thing when pushed upwards.
 
+In summary, extent locals fix these problems with:
+
+* Sharing, not mutation
+* Automatic memory management, not manual
+
 ## Description
 
 In this JEP we propose an extent local variable.
@@ -223,9 +227,9 @@ An extent local value is a lightweight way to store, transmit, and
 restore context.  Context can be anything from a business object to an
 instance of a system-wide logger.
 
-The value associated
-with an extent local variable is defined in the bottom most frame of
-an extent, and is accessible in every frame of that extent.
+The value associated with an extent local variable is defined in the
+bottom most frame of an extent, and is accessible in every frame of
+that extent.
 
 ### For example
 
@@ -291,6 +295,7 @@ class Example {
 }
 ```
 
+[ I hate this paragraph: ]
 An `ExtentLocal` instance such as `X` above is a key that is used to
 look up a value in the current thread. Despite `X` being declared
 static in class `Example`, there is _not_ exactly one incarnation of
@@ -306,9 +311,8 @@ the Lambda invoked by `run()`.
 
 One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
-These parameters will be accessible within the exxtent of a
-extent local's binding operation (the set of methods invoked within the
-binding extent, and any methods invoked transitively by them).
+These parameters will be accessible within the extent of a binding
+operation. [ Do we need that sentence? ]
 
 ```
   // Declare extent locals x and y
@@ -382,7 +386,7 @@ But when called in a different context, we see a different value for
 In summary, extent locals have the following properties:
 
 * _Locally-defined extent_: The values of `x` and `y` are only bound
-  while the `run()` method is executing.
+  in the extent of `run()`.
 * _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
   once bound, are effectively final.
 * _Simple and fast code_: In most cases an extent-local `x.get()` is as
@@ -390,7 +394,7 @@ In summary, extent locals have the following properties:
   away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
-  field of a variable final does.
+  field of a variable `final` does.
 
 ## Uses of extent locals
 
