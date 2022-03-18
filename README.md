@@ -171,7 +171,9 @@ context is mutable by callees.
 It would be ideal if the Java Platform provided a way to have per
 thread context for millions of virtual threads that is immutable by
 default and, given the low cost of forking virtual threads,
-inheritable.
+inheritable. Because these ideal thread local variables are immutable,
+thir data can be easily shared by child threads, rather than copied to
+child threads.
 
 The need for extent locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
