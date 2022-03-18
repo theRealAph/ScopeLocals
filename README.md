@@ -243,23 +243,20 @@ though the caller itself did not pass them.
 
 ```
 class ServerFramework {
-
     private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
 
     void processRequest() {
-
-      ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
-        .run(() -> {
-          :
-          Connection connection = connectDatabase();
-          :
+        ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
+                   .run(() -> {
+            ...
+            Connection connection = connectDatabase();
+            ...
         });
     }
 
     Connection connectDatabase() {
-        // Read the caller's credentials to see if they have
-        // sufficient permissions for this action.
-        if ServerFramework.CREDENTIALS.get().s != "MySecret") {
+        // Use the caller's credentials
+        if (acceptable(ServerFramework.CREDENTIALS.get())) {
             throw new SecurityException("No dice, kid!");
         }
         return new Connection();
