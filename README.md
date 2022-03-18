@@ -278,7 +278,7 @@ class ServerFramework {
 
 The `ExtentLocal.get()` operation could be thought of as
 `Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
-which more clearly shows that a `ExtentLocal` instance is a key used
+which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
 
