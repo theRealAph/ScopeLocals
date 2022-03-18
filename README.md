@@ -187,26 +187,6 @@ Because these ideal per thread variables are immutable and
 lightweight, they align well with the thread-per-request model given
 new life by virtual threads
 
-The need for extent locals arose from Project Loom, where threads are
-cheap and plentiful, rather than expensive and scarce. If you only
-have a few hundred platform threads, maintaining a thread local map
-seems viable. However, if you have _millions_ of threads, maintaining
-millions of thread local maps becomes a significant burden, both in
-terms of creating the maps and the memory they occupy.
-
-Instead of hundreds of platform threads you have millions of virtual
-threads. However, a different model of context is desirable when
-programming with virtual threads.
-
-With Project Loom's virtual threads you can keep your beloved
-thread-per-request model.  Wouldn't it be terrible if virtual threads
-carried over the thread locals heavyweight model of inheritability?
-
-In summary, extent locals fix these problems with:
-
-* Sharing, not mutation
-* Automatic memory management, not manual
-
 ## Description
 
 An extent local variable is a per thread vairable that allows context
