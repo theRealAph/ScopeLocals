@@ -27,14 +27,6 @@ in some contexts,
 
 ## Motivation
 
-An `ExtentLocal` instance such as `X` above is a key that is used to
-look up a value in the current thread. Despite `X` being declared
-static in class `Example`, there is _not_ exactly one incarnation of
-the field shared across all instances of Foo; instead, there are
-_multiple_ incarnations of the field, one per thread, and the
-incarnation of `X` that is used when code performs a field access
-(`X.get()`) depends on the thread which is executing the code.
-
 In Java programs, a method may receive its input from several
 sources. The primary source is the method's arguments, but there are
 others, such as static fields.
@@ -71,13 +63,13 @@ work.
 Since Java 1.2, ThreadLocals have been the standard way to associate
 context with a thread.
 
-(Story about thread local maps here.
-
-Somebody uses thread.get(), but they get their thread's copy. Thread
-locals are one realization of per thread; data extent locals are
-another.
-
-)
+An `ExtentLocal` instance such as `X` above is a key that is used to
+look up a value in the current thread. Despite `X` being declared
+static in class `Example`, there is _not_ exactly one incarnation of
+the field shared across all instances of Foo; instead, there are
+_multiple_ incarnations of the field, one per thread, and the
+incarnation of `X` that is used when code performs a field access
+(`X.get()`) depends on the thread which is executing the code.
 
 Unfortunately, ThreadLocals have some disadvantages when used for this
 purpose.
