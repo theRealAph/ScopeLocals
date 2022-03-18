@@ -237,7 +237,9 @@ initializing an extent local variable with some credentials. The
 framework then runs some piece of code (supplied by the user) thread
 that connects to a database. The connectDatabase() method then uses
 the credentials set by it's caller's caller to determine if its caller
-to access the database.
+to access the database. It is as if the connectDatabase() method has
+an invisible parameter to represent the caller's credentials, even
+though the caller itself did not pass them.
 
 ```
 class DatabaseConnector {
