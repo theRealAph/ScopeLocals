@@ -63,6 +63,8 @@ work.
 Since Java 1.2, ThreadLocals have been the standard way to associate
 context with a thread.
 
+<Story about thread local maps>
+
 Unfortunately, ThreadLocals have some disadvantages when used for this
 purpose.
 
@@ -109,10 +111,12 @@ threads to be able to access some context from their parent. For
 example, they may share a logger on an output stream. Perhaps they may
 share some kind of security policy too.
 
-The short-running nature of virtual threads means that the crap
-programming model of thread locals doesn't matter because it doesn't
-matter when they die at a prodigous rate - remove() isn't necessary
-when a thread, virtual or not, terminates.
+Because virtual threads are still threads, it is legitimate to for a
+virtual thread to carry thread-local variables. The short-running
+nature of virtual threads means that the crap programming model of
+thread locals doesn't matter because it doesn't matter when they die
+at a prodigous rate - remove() isn't necessary when a thread, virtual
+or not, terminates.
 
 Unfortunately, thread locals present another problem in the era of
 virtual threads, because thread locals may be inheritable.
@@ -139,10 +143,8 @@ millions of thread local maps becomes a significant burden, both in
 terms of creating the maps and the memory they occupy.
 
 Instead of hundreds of platform threads you have millions of virtual
-threads. Because virtual threads are still threads, it is legitimate
-to for a virtual thread to carry thread-local variables. However, a
-different model of context is desirable when programming with virtual
-threads.
+threads. However, a different model of context is desirable when
+programming with virtual threads.
 
 Two problems arise from thread local variables on virtual threads:
 
