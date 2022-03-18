@@ -109,6 +109,21 @@ threads to be able to access some context from their parent. For
 example, they may share a logger on an output stream. Perhaps they may
 share some kind of security policy too.
 
+The short-running nature of virtual threads means that the crap
+programming model of thread locals doesn't matter because it doesn't
+matter when they die at a prodigous rate - remove() isn't necessary
+when a thread, virtual or not, terminates.
+
+Unfortunately, thread locals present another problem in the era of
+virtual threads, because thread locals may be inheritable.
+This feature, _inheritability_, is predicated on there being a
+relatively small set of threads sharing domain objects. When a new
+`Thread` instance is created, its parent's set of inheritable
+thread-local variables is deeply copied. This is necessary because a
+thread's set of thread locals is, by design, mutable, so it cannot be
+shared between threads. Every child thread ends up carrying a local
+copy of its parent's entire set of `InheritableThreadLocal`s.
+
 For such uses we want sharing, but we do not want mutability. It
 should be popssible for a child thread to share its parent's context,
 but it's not necessary to mutate it. In contrast, thread local
@@ -149,16 +164,6 @@ ready.
 
 A task that skips from thread to thread is at odds with the idea that
 task state can be kept on a thread.
-
-In addition, thread local variables have a feature, _inheritability_,
-that is predicated on there being a relatively small set of threads
-
-sharing domain objects. When a new `Thread` instance is created, its
-parent's set of inheritable thread-local variables is deeply
-copied. This is necessary because a thread's set of thread locals is,
-by design, mutable, so it cannot be shared between threads. Every
-child thread ends up carrying a local copy of its parent's entire set
-of `InheritableThreadLocal`s.
 
 With Project Loom's virtual threads you can keep your beloved
 thread-per-request model.  Wouldn't it be terrible if virtual threads
