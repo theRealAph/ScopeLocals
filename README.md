@@ -127,12 +127,13 @@ A task that skips from thread to thread is at odds with the idea that
 task state can be kept on a thread.
 
 In addition, thread local variables have a feature, _inheritability_,
-that is predicated on a relatively small set of threads sharing domain
-objects. When a new `Thread` instance is created, its parent's set of
-inheritable thread-local variables is deeply copied. This is necessary
-because a thread's set of thread locals is, by design, mutable, so it
-cannot be shared between threads. Every child thread ends up carrying
-a local copy of its parent's entire set of `InheritableThreadLocal`s.
+that is predicated on there being a relatively small set of threads
+sharing domain objects. When a new `Thread` instance is created, its
+parent's set of inheritable thread-local variables is deeply
+copied. This is necessary because a thread's set of thread locals is,
+by design, mutable, so it cannot be shared between threads. Every
+child thread ends up carrying a local copy of its parent's entire set
+of `InheritableThreadLocal`s.
 
 With Project Loom's virtual threads you can keep your beloved
 thread-per-request model.  Wouldn't it be terrible if virtual threads
@@ -162,12 +163,36 @@ variables assume mutability. While it makes sese for a parent to share
 context with a million children, it makes no sense at all for them to
 maintain mutable copies of it.
 
+### Extents
+
+In the JVM specification, an extent is defined thusly:
+
+"It is often useful to describe the situation where, in a given
+thread, a given method m1 invokes a method m2, which invokes a method
+m3, and so on until the method invocation chain includes the current
+method mn. None of m1..mn have yet completed; all of their frames are
+still stored on the Java Virtual Machine stack (2.5.2). Collectively,
+their frames are called an _extent_. The frame for the current method
+mn is called the _top most frame_ of the extent. The frame for the
+given method m1 is called the _bottom most frame+ of the extent"
+
+In this JEP we propose a new construct, the scope local variable,
+which is bounded by a specific extent.
+
 In summary, scope locals fix these problems with:
 
 * Sharing, not mutation
 * Automatic memory management, not manual
 
 ### The problem with unconstrained mutability
+
+[ TLs being mutable fies in the face of the repeated advice in
+_Effective Java_ to minimize mutability.
+
+_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
+try-with-resources and try...finally. Item 17: minimize mutability:
+don't provide methods that modify the object's state. Yet
+`ThreadLocal` depends on these things to minimize and avoid. ]
 
 Thread local variables are prone to abuse. Fundamentally, programming
 with thread local variables can lead to spaghetti-like coding, for
@@ -192,64 +217,17 @@ methods, but a terrible thing when pushed upwards.
 
 ## Description
 
-### Orphan paragraphs
+In this JEP we propose an extent local variable.
 
-Scope locals are
+A scope local value is a lightweight way to store, transmit, and
+restore context.  Context can be anything from a business object to an
+instance of a system-wide logger.
 
-* Not global
-* Not per-thread
-* Per a constrained slice of a thread
-
-Global context is bad, per thread is better. Scope locals are an
-intra-thread context mechanism that doesn't suffer from these
-problems.
-
-Dynamically scoped variables have been around for a long time. It's
-time to being them to Java.
-
-Dynamic scoping enables context to flow through the program from
-caller to callee, to their callee, and so on. They are a way to have
-invisible parameters passed through every method invocation. These
-parameters are then usable in the dynamic scope of, say, request
-handlers.
-
-VTs - server code. They are small, shallow, and short lived.  The call
-stack of that code is a natural boundary - it just contains the
-business logic.  It needs to looks things up in the context of the
-framework, and it needs to call into the JDK, which needs to know
-e.g. the permissions of the caller.
-
-Setting up context is the responsibility of the sever framework.  The
-server stores the credentials for a thread in a scope local.  The
-application logic knows nothing about security, but the JDK will check
-the current thread's permissions by looking in the scope local.
-
-If you have a million virtual threads, the JDK connection needs to
-check the credentials, and this is happening concurrently in a million
-virtual threads.
-
-Scope locals are like thread locals, but with
-
-* Better memory management
-* Better inheritability
-
-In summary, scope local is a mechanism which exploits the idea of
-dynamic scoping by allowing a variable to provide useful context to a
-program, and to be unassociated automatically. Such variables would
-effectively be invisible parameters passed through every method in the
-call stack. This will lead to more reliable multi-threaded programs.
-
-- One declaration, that introduces the name X, with lexical scope.
-- 400,000 variables, one per thread, each variable having its own dynamic extent flowing through callees, and callees of callees, and callees of callees of callees.
-- Each variable has one value as usual.
-Write out X_1, X_2, etc
+The value associated
+with an extent local variable is defined in the bottom most frame of
+an extent, and is accessible in every frame of that extent.
 
 ### For example
-
-This class provides scope-local variables. These variables differ from their normal counterparts in that each thread that accesses one (via its get method) has its own, independently initialized copy of the variable. ScopeLocal instances are typically private static fields in classes that wish to associate state with a thread (e.g., a user ID or Transaction ID). 
-
-A scope local value is a lightweight way to store, transmit, and restore context.
-Context can be anything from a business object to an instance of a system-wide logger.
 
 The following example uses a scope local to make credentials available
 to callees.
@@ -264,6 +242,9 @@ class DatabaseConnector {
     
     // Bind the scope local CREDENTIALS in the current thread
     // to our new credentials
+    // The `run()` method here is the bottom most frame of the extent
+    // in which `DatabaseConnector.CREDENTIALS.get()` will return
+    // `creds`.
     ScopeLocal.where(DatabaseConnector.CREDENTIALS, creds).run(() -> {
         :
         Connection connection = connectDatabase();
@@ -281,6 +262,7 @@ class DatabaseConnector {
 }
 ```
 
+[ Should this paragraph be elsewhere? ]
 In this example `DatabaseConnector.CREDENTIALS.get()` has a hidden
 parameter: the current thread. The `ScopeLocal.get()` operation could
 be written as
@@ -288,21 +270,6 @@ be written as
 which more clearly shows that a `ScopeLocal` instance is a key, which
 is used to look up the current thread's incarnation of a scope local.
 
-In Java, the scope of a declaration -- the association of a name with
-an entity such as a variable -- is the region of the program within
-which the entity declared by the declaration can be referred to using
-a simple name.
-
-The scope of scope locals does not refer to the lexical scope of its
-name, but to the dynamic scope of the lifetime of a name binding.
-
-
-
-
-The goal of this JEP is to support dynamically scoped values, which
-may be referred to anywhere within the dynamic scope that binds a
-value to a scope local. We'll define a `ScopeLocal` class which does
-this as a library facility, like so:
 
 ```
 class Example {
@@ -688,67 +655,115 @@ a separate identity from thread locals.
 
 
 
-## Deletia
+* New Stuff
+
+The run() method is the bottom-most frame of the extent in which the
+scope local variable is defined.
+
+Clearly, scope local variables are a constrained version of thread
+locals. Once set, a thread local variable is defined for the entie
+lifetime of its thread. A scope local variable is defined for its
+extent.
+
+** Thread inheritance
+
+Like a thread-local variable, an extent-local variable can be 
+_inheritable_. This means that the state of the extent-local variable in 
+a parent thread is available to code running in child threads. The 
+immutability of state in an extent-local variable means that 
+inheritability in the child thread is fast and lightweight; this 
+comports with programs using cheap and plentiful virtual threads as the 
+child threads.
+
+The scope local variables defined in the parent's extent (at the time
+the child threads are started) are also defined in the child.
+
+A newly created thread has read-only access the scope local variables
+defined in it parent.
+
+A child virtual thread can inherit its parent's set of scope local
+variables, but as long as the inherited variables are read only,
+sharing is fine.
+
+With a million vitual threads, it would seem like there are an awful
+lot of maps. But immutable maps can be shared! This is not true of
+thread locals, which are mutable, so cannot.
+
+** Thread local properties
+
+The model where you call `remove()` is plainly dumb.
+
+Thread locals are mutable by default, just like the local variables
+they were trying to be like.
+
+Thread locals are a less-than-global variable.
+
+It turns out that many of the use cases for TLs have turned out to be
+entirely immutable. But the requirement that a TL has to be immutable
+is burned into the API.
+
+A TL is always mutable but only optionally inheritable. The fact that
+TLs are always inheritable requires inheritability to be turned
+off. If a TL were immutable, they would be cheaper to inherit, which
+in turn would mean inheritability could be enabled more widely.
 
 
+## Alternatives
 
-It's usual to say that Java is _lexically scoped_, in the sense that
-variables (and other entities) can be referred to by a simple name
-only within the region of source code in which they're declared. Here,
-for example, `x` is declared in a class `Example`, and may be referred
-to as `x` in any method declared in the same class. We say, therefore,
-that the scope of `x` is the class `Example`:
+We could have had a non-settable TL that threw an
+`UnsupportedOperationException`, but we'd still have the problem of
+memory management.
 
-```
-class Example {
-    private int x = 5;
 
-    void printIt() {
-        System.out.println(x);
-    }
-}
-```
+# Orphan paragraphs
 
-Java also has nested variable scopes inside a method. Here, the
-variable `x` is declared in the outermost scope of the method
-`printIt()`, and the variable `i` is declared in an inner scope, that
-of a `for` loop. In this example, the scope of `x` is that of the
-method `printIt()` from the point where `x` is declared to the closing
-brace of the method:
+Scope locals are
 
-```
-class Example {
+* Not global
+* Not per-thread
+* Per a constrained slice of a thread
 
-    void work() {
-        int x = 5;
-        for (int i = 0; i < 10; i++) {
-            moreWork(x * i);
-        }
-        // It is is possible to refer to x at this point,
-        // but not i, because the scope of i has ended.
-        System.out.println(x);
-    }
+Global context is bad, per thread is better. Scope locals are an
+intra-thread context mechanism that doesn't suffer from these
+problems.
 
-    void moreWork(int n) {
-        System.out.println(n);
-    }
-}
-```
+Dynamically scoped variables have been around for a long time. It's
+time to being them to Java.
 
-(From the Java Language Specification: the scope of a local variable
-declaration in a block is the rest of the block in which the
-declaration appears, starting with its own initializer and including
-any further declarators to the right in the local variable declaration
-statement.
-https://docs.oracle.com/javase/specs/jls/se17/html/jls-6.html#jls-6.3)
+Dynamic scoping enables context to flow through the program from
+caller to callee, to their callee, and so on. They are a way to have
+invisible parameters passed through every method invocation. These
+parameters are then usable in the dynamic scope of, say, request
+handlers.
 
-With lexical scoping, the region of the program within which an entity
-is accessible by name is a region of the source code.
+Virtual threads - server code. They are small, shallow, and short
+lived.  The call stack of that code is a natural boundary - it just
+contains the business logic.  It needs to looks things up in the
+context of the framework, and it needs to call into the JDK, which
+needs to know e.g. the permissions of the caller.
 
-With dynamic scoping, the region of the program within which an entity
-is accessible by name is a duration in time, from the point at which
-the name is bound to the entity to the point at which the binding is
-removed. For example, if x in the previous code were dynamically
-scoped then the body of `moreWork` could access `x` despite `x` not
-being passed to it, and `x` not being a field of `Example`.
+Setting up context is the responsibility of the sever framework.  The
+server stores the credentials for a thread in a scope local.  The
+application logic knows nothing about security, but the JDK will check
+the current thread's permissions by looking in the scope local.
+
+If you have a million virtual threads, the JDK connection needs to
+check the credentials, and this is happening concurrently in a million
+virtual threads.
+
+Scope locals are like thread locals, but with
+
+* Better memory management
+* Better inheritability
+
+In summary, scope local is a mechanism which exploits the idea of
+dynamic scoping by allowing a variable to provide useful context to a
+program, and to be unassociated automatically. Such variables would
+effectively be invisible parameters passed through every method in the
+call stack. This will lead to more reliable multi-threaded programs.
+
+- One declaration, that introduces the name X, with lexical scope.
+- 400,000 variables, one per thread, each variable having its own dynamic extent flowing through callees, and callees of callees, and callees of callees of callees.
+- Each variable has one value as usual.
+Write out X_1, X_2, etc
 
