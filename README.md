@@ -175,6 +175,10 @@ inheritable. Because these ideal per thread variables are immutable,
 thir data can be easily shared by child threads, rather than copied to
 child threads.
 
+Because these ideal per thread variables are immutable and
+lightweight, they align well with the thread-per-request model given
+new life by virtual threads
+
 The need for extent locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
 have a few hundred platform threads, maintaining a thread local map
@@ -190,7 +194,14 @@ With Project Loom's virtual threads you can keep your beloved
 thread-per-request model.  Wouldn't it be terrible if virtual threads
 carried over the thread locals heavyweight model of inheritability?
 
-### Extents
+In summary, extent locals fix these problems with:
+
+* Sharing, not mutation
+* Automatic memory management, not manual
+
+## Description
+
+In this JEP we propose an extent local variable.
 
 In the JVM specification, an extent is defined thusly:
 
@@ -208,16 +219,6 @@ methods invoked transitively by them.)
 
 In this JEP we'll propose a new construct, the extent local variable,
 which is bounded by (defined in? during?) a specific extent.
-
-
-In summary, extent locals fix these problems with:
-
-* Sharing, not mutation
-* Automatic memory management, not manual
-
-## Description
-
-In this JEP we propose an extent local variable.
 
 An extent local value is a lightweight way to store, transmit, and
 restore context.  Context can be anything from a business object to an
