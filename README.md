@@ -201,9 +201,6 @@ In summary, extent locals fix these problems with:
 
 ## Description
 
-In this JEP we propose an extent local variable. An extent local
-variable is like a thread local variable that can't be mutated.
-
 An extent local variable is a per thread vairable that allows context
 to be set in a caller and read by callees. Unlike a thread local
 variable, an extent local variable is immutable. Context can be
