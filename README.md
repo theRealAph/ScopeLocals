@@ -281,28 +281,6 @@ The `ExtentLocal.get()` operation could be thought of as
 which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
-
-```
-class Example {
-
-    // Define an extent local that may be bound to Integer values:
-    static final ExtentLocal<Integer> X = ExtentLocal.newInstance();
-
-    void printIt() {
-        // Bind X to the value 5, then run anotherMethod()
-        ExtentLocal.where(X, 5).run(() -> anotherMethod());
-    }
-
-    void anotherMethod() {
-        for (int i = 0; i < 10; i++) {
-            System.out.println(X.get() * i);
-        }
-        System.out.println(X.get());
-    }
-}
-```
-
-[ I hate this paragraph: ]
 An extent local acquires (we say: _is bound to_) a value on entry to a
 extent; when that extent terminates, the previous value (or none) is
 restored. In this case, the extent of `X`'s binding is the duration of
