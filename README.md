@@ -164,8 +164,14 @@ the code, so that it is possible to write maintainable
 programs. Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
 
-Context is a fine thing to be pushed downwards from caller to called
-methods, but a terrible thing when pushed upwards.
+Context is a fine thing to be propagated from caller to callee, where
+it should be immutable, but is is a terrible thing when a caller's
+context is mutable by callees.
+
+It would be ideal if the Java Platform provided a way to have per
+thread context for millions of virtual threads that is immutable by
+default and, given the low cost of forking virtual threads,
+inheritable.
 
 The need for extent locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
