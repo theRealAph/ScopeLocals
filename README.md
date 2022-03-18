@@ -1,10 +1,10 @@
-# Scope-local variables
+# Extent-local variables
 
 ## Summary
 
 Define a standard, lightweight way to pass contextual information from
 a caller to callees in the currently executing thread, and in some
-cases to a group of threads. In particular, scope locals are intended
+cases to a group of threads. In particular, extent locals are intended
 to replace `ThreadLocal`s for sharing information with a very large
 number of threads. This usage especially applies to Project Loom's
 virtual threads.
@@ -17,11 +17,11 @@ It is not a goal to change the Java Programming Language.
 
 This JEP is only concerned with associating local names and values. It
 doesn't attempt to replace, for example, try-with-resources. It
-doesn't perform cleanup operations when a scope ends, and isn't
+doesn't perform cleanup operations when an extent ends, and isn't
 related to a C++-style destructor.
 
-It is not a goal to force virtual threads to use scope locals instead
-of thread local variables. While we expect scope locals to be a better
+It is not a goal to force virtual threads to use extent locals instead
+of thread local variables. While we expect extent locals to be a better
 fit in many or most cases., thread-local variables may still be useful
 in some contexts,
 
@@ -92,7 +92,7 @@ instances with data via a thread local map.
 
 ### Virtual threads versus thread local variables
 
-The need for scope locals arose from Project Loom, where threads are
+The need for extent locals arose from Project Loom, where threads are
 cheap and plentiful, rather than expensive and scarce. If you only
 have a few hundred platform threads, maintaining a thread local map
 seems viable. However, if you have _millions_ of threads, maintaining
@@ -176,10 +176,10 @@ their frames are called an _extent_. The frame for the current method
 mn is called the _top most frame_ of the extent. The frame for the
 given method m1 is called the _bottom most frame+ of the extent"
 
-In this JEP we propose a new construct, the scope local variable,
+In this JEP we propose a new construct, the extent local variable,
 which is bounded by a specific extent.
 
-In summary, scope locals fix these problems with:
+In summary, extent locals fix these problems with:
 
 * Sharing, not mutation
 * Automatic memory management, not manual
@@ -219,7 +219,7 @@ methods, but a terrible thing when pushed upwards.
 
 In this JEP we propose an extent local variable.
 
-A scope local value is a lightweight way to store, transmit, and
+An extent local value is a lightweight way to store, transmit, and
 restore context.  Context can be anything from a business object to an
 instance of a system-wide logger.
 
@@ -229,23 +229,23 @@ an extent, and is accessible in every frame of that extent.
 
 ### For example
 
-The following example uses a scope local to make credentials available
+The following example uses an extent local to make credentials available
 to callees.
 
 ```
 class DatabaseConnector {
 
-    // Declare a scope local to hold credentials for the current thread
-    private static final ScopeLocal<Credentials> CREDENTIALS = ScopeLocal.newInstance();
+    // Declare an extent local to hold credentials for the current thread
+    private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
 
     Credentials creds = newCredentials();
     
-    // Bind the scope local CREDENTIALS in the current thread
+    // Bind the extent local CREDENTIALS in the current thread
     // to our new credentials
     // The `run()` method here is the bottom most frame of the extent
     // in which `DatabaseConnector.CREDENTIALS.get()` will return
     // `creds`.
-    ScopeLocal.where(DatabaseConnector.CREDENTIALS, creds).run(() -> {
+    ExtentLocal.where(DatabaseConnector.CREDENTIALS, creds).run(() -> {
         :
         Connection connection = connectDatabase();
         :
@@ -264,22 +264,22 @@ class DatabaseConnector {
 
 [ Should this paragraph be elsewhere? ]
 In this example `DatabaseConnector.CREDENTIALS.get()` has a hidden
-parameter: the current thread. The `ScopeLocal.get()` operation could
+parameter: the current thread. The `ExtentLocal.get()` operation could
 be written as
-`Thread.currentThread().getScopeLocal(DatabaseConnector.CREDENTIALS)`,
-which more clearly shows that a `ScopeLocal` instance is a key, which
-is used to look up the current thread's incarnation of a scope local.
+`Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
+which more clearly shows that a `ExtentLocal` instance is a key, which
+is used to look up the current thread's incarnation of an extent local.
 
 
 ```
 class Example {
 
-    // Define a scope local that may be bound to Integer values:
-    static final ScopeLocal<Integer> X = ScopeLocal.newInstance();
+    // Define an extent local that may be bound to Integer values:
+    static final ExtentLocal<Integer> X = ExtentLocal.newInstance();
 
     void printIt() {
         // Bind X to the value 5, then run anotherMethod()
-        ScopeLocal.where(X, 5).run(() -> anotherMethod());
+        ExtentLocal.where(X, 5).run(() -> anotherMethod());
     }
 
     void anotherMethod() {
@@ -291,7 +291,7 @@ class Example {
 }
 ```
 
-A `ScopeLocal` instance such as `X` above is a key that is used to
+An `ExtentLocal` instance such as `X` above is a key that is used to
 look up a value in the current thread. Despite `X` being declared
 static in class `Example`, there is _not_ exactly one incarnation of
 the field shared across all instances of Foo; instead, there are
@@ -299,26 +299,26 @@ _multiple_ incarnations of the field, one per thread, and the
 incarnation of `X` that is used when code performs a field access
 (`X.get()`) depends on the thread which is executing the code.
 
-A scope local acquires (we say: _is bound to_) a value on entry to a
-scope; when that scope terminates, the previous value (or none) is
-restored. In this case, the scope of `X`'s binding is the duration of
+An extent local acquires (we say: _is bound to_) a value on entry to a
+extent; when that extent terminates, the previous value (or none) is
+restored. In this case, the extent of `X`'s binding is the duration of
 the Lambda invoked by `run()`.
 
-One useful way to think of scope locals is as invisible, effectively
+One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
-These parameters will be accessible within the dynamic scope of a
-scope local's binding operation (the set of methods invoked within the
-binding scope, and any methods invoked transitively by them).
+These parameters will be accessible within the exxtent of a
+extent local's binding operation (the set of methods invoked within the
+binding extent, and any methods invoked transitively by them).
 
 ```
-  // Declare scope locals x and y
-  static final ScopeLocal<MyType> x = ScopeLocal.newInstance();
-  static final ScopeLocal<MyType> y = ScopeLocal.newInstance();
+  // Declare extent locals x and y
+  static final ExtentLocal<MyType> x = ExtentLocal.newInstance();
+  static final ExtentLocal<MyType> y = ExtentLocal.newInstance();
 
   ... much later
 
   {
-    ScopeLocal.where(x, expr1)
+    ExtentLocal.where(x, expr1)
               .where(y, expr2)
               .run(() -> ... code that uses x.get() and y.get() ...);
 
@@ -332,17 +332,17 @@ In this example, `run()` is said to "bind" `x` and `y` to the results
 of evaluating `expr1` and `expr2` respectively. While the method
 `run()` is executing, any calls to `x.get()` and `y.get()` return the
 values that have been bound to them. The methods called from `run()`,
-and any methods called by them, comprise the dynamic scope of `run()`.
+and any methods called by them, comprise the extent of `run()`.
 
 Please note that the code that uses `x.get()` and `y.get()` may be a
 very long way away, for example in a callback somewhere. Imagine a
 complex system, with many intervening method calls, between the point
-where a scope local is bound to a value and the point where that value
+where an extent local is bound to a value and the point where that value
 is retrieved. Like so:
 
 ```
     void run1() {
-        ScopeLocal.where(x, new MyType("Jill"))
+        ExtentLocal.where(x, new MyType("Jill"))
                   .where(y, new MyType("Sofia"))
                   .run(() -> m());
     }
@@ -363,7 +363,7 @@ But when called in a different context, we see a different value for
 
 ```
     void run2() {
-        ScopeLocal.where(x, new MyType("Helena"))
+        ExtentLocal.where(x, new MyType("Helena"))
                   .where(y, new MyType("Henri"))
                   .run(() -> p());
     }
@@ -379,20 +379,20 @@ But when called in a different context, we see a different value for
     }
 ```
 
-In summary, scope locals have the following properties:
+In summary, extent locals have the following properties:
 
 * _Locally-defined extent_: The values of `x` and `y` are only bound
   while the `run()` method is executing.
-* _Immutability_ There is no `ScopeLocal.set()` method: scope locals,
+* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
   once bound, are effectively final.
-* _Simple and fast code_: In most cases a scope-local `x.get()` is as
+* _Simple and fast code_: In most cases an extent-local `x.get()` is as
   fast as a local variable `x`. This is true regardless of how far
-  away `x.get()` is from the point that the scope local `x` is bound.
+  away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
   field of a variable final does.
 
-## Uses of scope locals
+## Uses of extent locals
 
 ### Hidden parameters for callbacks
 
@@ -403,21 +403,21 @@ reference to a logger through their code into your callback. You don't
 want to turn logging on all the time, just when certain parts of the
 programmer are executing.
 
-Here's a simple example of how you'd using a scope local to add
+Here's a simple example of how you'd using an extent local to add
 context-sensitive logging to an application. Let's assume that you
 want to log some events, but only for certain places when your
 application is running.
 
 First, declare an interface that is invoked when a loggable event
-occurs, and a `ScopeLocal` instance that will refer to one:
+occurs, and a `ExtentLocal` instance that will refer to one:
 
 ```
     interface MyLogger {
         public void log(String s);
     }
 
-    private static final ScopeLocal<MyLogger> SL_LOGGER
-            = ScopeLocal.newInstance(MyLogger.class);
+    private static final ExtentLocal<MyLogger> SL_LOGGER
+            = ExtentLocal.newInstance(MyLogger.class);
 ```
 
 In your application code, call `SL_LOGGER`'s `log()` method:
@@ -432,29 +432,29 @@ And when you want to do some logging, bind `SL_LOGGER` to do whatever
 you want:
 
 ```
-        ScopeLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s)).run(this::exec);
+        ExtentLocal.where(SL_LOGGER, (s) -> LOGGER.severe(s)).run(this::exec);
 ```
 
 ### Securely passing credentials
 
 ### Shadowing
 
-It is sometimes useful to be able to re-bind an already-bound scope
+It is sometimes useful to be able to re-bind an already-bound extent
 local. For example, a privileged method may need to connect to a
 database with a less-privileged set of credentials, like so:
 
 ```
       Credentials creds = CREDENTIALS.get();
       creds = creds.withLowerTrust();
-      ScopeLocal.where(CREDENTIALS, creds).run(() -> {
+      ExtentLocal.where(CREDENTIALS, creds).run(() -> {
         :
         Connection connection = connectDatabase();
         :
       });
 ```
 
-This "shadowing" only extends until the end of the dynamic
-scope of the lambda above.
+This "shadowing" only extends until the end of the extent of the
+lambda above.
 
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
@@ -482,7 +482,7 @@ one; if there is, we should use it.
 
 ```
     public final RendererContext getRendererContext() {
-        // RENDER_CTX is a scope local that refers to a context
+        // RENDER_CTX is an extent local that refers to a context
         // If there's already a bound RendererContext, use it,
         //   else create and return a new one.
         if (RENDER_CTX.isBound()) {
@@ -507,7 +507,7 @@ class RendererContext {
 
     // Call r with RENDER_CTX bound to this RendererContext
     T call(Callable<T> r) throws Exception {
-        return ScopeLocal.where(RENDER_CTX, this).call(r);
+        return ExtentLocal.where(RENDER_CTX, this).call(r);
     }
 
     // ...
@@ -518,16 +518,16 @@ We'd like to support as many of these use cases as we can, but only if
 the basic properties of effective finality and re-entrancy can be
 guaranteed.
 
-## Replacing some uses of `ThreadLocal` with scope locals
+## Replacing some uses of `ThreadLocal` with extent locals
 
-Because scope locals have a well-defined lifetime, the block in which
+Because extent locals have a well-defined lifetime, the block in which
 they were bound, they can never be used in a way that's identical to
 the way thread-local variables are used. Therefore, some code changes
-will be required to switch from thread locals to scope locals.
+will be required to switch from thread locals to extent locals.
 
 Please note that, for the sake of brevity, these are simple
 examples. In some of these examples a simple refactoring would make
-the use of scope locals unnecessary, but that would be far more
+the use of extent locals unnecessary, but that would be far more
 difficult in a more complex scenario with multiple libraries of
 separate authorship.
 
@@ -544,10 +544,10 @@ running, it fetches the transaction context from this
 ThreadLocal."
 ```
 
-This kind of thing is well suited to the use of a scope local, but
-because scope local bindings are always removed at the end of the
-scope in which they were bound, you must run an entire operation from
-a binding scope. So, you won't be able to do something like this
+This kind of thing is well suited to the use of an extent local, but
+because extent local bindings are always removed at the end of the
+extent in which they were bound, you must run an entire operation from
+a binding extent. So, you won't be able to do something like this
 example, which has a `ThreadLocal` embedded in a `UserTransaction`:
 
 ```
@@ -586,7 +586,7 @@ class UserTransaction {
 ```
 
 instead you might do something like this, where
-`UserTransaction.run()` binds a scope local then calls a lambda:
+`UserTransaction.run()` binds an extent local then calls a lambda:
 
 ```
   public void foo() {
@@ -605,11 +605,11 @@ where `UserTransaction.run()` does something like
 ```
 class UserTransaction {
 
-  private static final ScopeLocal<UserTransaction> TRANSACTION = ScopeLocal.newInstance();
+  private static final ExtentLocal<UserTransaction> TRANSACTION = ExtentLocal.newInstance();
 
   void run(Runnable action) {
     ... // initialize
-    ScopeLocal.where(TRANSACTION, this).run(action);
+    ExtentLocal.where(TRANSACTION, this).run(action);
     ... commit the transaction
   }
 
@@ -617,19 +617,19 @@ class UserTransaction {
 }
 ```
 
-that is to say, run an entire operation in a scope local binding.
+that is to say, run an entire operation in an extent local binding.
 
 ### Caches for Non-thread-safe objects that are expensive to create
 
-These are problematic for scope locals, perhaps because caches are one
+These are problematic for extent locals, perhaps because caches are one
 of the few use cases for which thread-local variables are ideally
 suited. If you can create caches you are likely to need in an
-outermost scope that would work, but it requires some structural changes.
+outermost extent that would work, but it requires some structural changes.
 
 ### Hidden return values
 
-This isn't difficult to do with scope locals: create an empty instance
-of a container class in the outer scope, call some method, and the
+This isn't difficult to do with extent locals: create an empty instance
+of a container class in the outer extent, call some method, and the
 callee method `set()`s the value in the container. However, while it's
 pretty obvious how it do this, it's rather evil.
 
@@ -637,20 +637,20 @@ pretty obvious how it do this, it's rather evil.
 
 There is more detail in the Javadoc for the API, at
 
-http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ScopeLocal.html
+http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ExtentLocal.html
 
 ## Alternatives
 
-It is possible to emulate many of the features of scope locals with
+It is possible to emulate many of the features of extent locals with
 `ThreadLocal`s, albeit at some cost in memory footprint, runtime
 security, and performance.
 
 We have experimented with a modified version of `ThreadLocal` that
-supports some of the characteristics of scope locals. However,
+supports some of the characteristics of extent locals. However,
 carrying the additional baggage of `ThreadLocal` results in an
 implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or
-both. It is better, therefore, not to do that but to give scope locals
+both. It is better, therefore, not to do that but to give extent locals
 a separate identity from thread locals.
 
 
@@ -658,11 +658,11 @@ a separate identity from thread locals.
 * New Stuff
 
 The run() method is the bottom-most frame of the extent in which the
-scope local variable is defined.
+extent local variable is defined.
 
-Clearly, scope local variables are a constrained version of thread
+Clearly, extent local variables are a constrained version of thread
 locals. Once set, a thread local variable is defined for the entie
-lifetime of its thread. A scope local variable is defined for its
+lifetime of its thread. an extent local variable is defined for its
 extent.
 
 ** Thread inheritance
@@ -675,13 +675,13 @@ inheritability in the child thread is fast and lightweight; this
 comports with programs using cheap and plentiful virtual threads as the 
 child threads.
 
-The scope local variables defined in the parent's extent (at the time
+The extent local variables defined in the parent's extent (at the time
 the child threads are started) are also defined in the child.
 
-A newly created thread has read-only access the scope local variables
+A newly created thread has read-only access the extent local variables
 defined in it parent.
 
-A child virtual thread can inherit its parent's set of scope local
+A child virtual thread can inherit its parent's set of extent local
 variables, but as long as the inherited variables are read only,
 sharing is fine.
 
@@ -717,13 +717,13 @@ memory management.
 
 # Orphan paragraphs
 
-Scope locals are
+Extent locals are
 
 * Not global
 * Not per-thread
 * Per a constrained slice of a thread
 
-Global context is bad, per thread is better. Scope locals are an
+Global context is bad, per thread is better. Extent locals are an
 intra-thread context mechanism that doesn't suffer from these
 problems.
 
@@ -733,7 +733,7 @@ time to being them to Java.
 Dynamic scoping enables context to flow through the program from
 caller to callee, to their callee, and so on. They are a way to have
 invisible parameters passed through every method invocation. These
-parameters are then usable in the dynamic scope of, say, request
+parameters are then usable in the extent of, say, request
 handlers.
 
 Virtual threads - server code. They are small, shallow, and short
@@ -743,27 +743,22 @@ context of the framework, and it needs to call into the JDK, which
 needs to know e.g. the permissions of the caller.
 
 Setting up context is the responsibility of the sever framework.  The
-server stores the credentials for a thread in a scope local.  The
+server stores the credentials for a thread in an extent local.  The
 application logic knows nothing about security, but the JDK will check
-the current thread's permissions by looking in the scope local.
+the current thread's permissions by looking in the extent local.
 
 If you have a million virtual threads, the JDK connection needs to
 check the credentials, and this is happening concurrently in a million
 virtual threads.
 
-Scope locals are like thread locals, but with
+Extent locals are like thread locals, but with
 
 * Better memory management
 * Better inheritability
 
-In summary, scope local is a mechanism which exploits the idea of
+In summary, extent local is a mechanism which exploits the idea of
 dynamic scoping by allowing a variable to provide useful context to a
 program, and to be unassociated automatically. Such variables would
 effectively be invisible parameters passed through every method in the
 call stack. This will lead to more reliable multi-threaded programs.
-
-- One declaration, that introduces the name X, with lexical scope.
-- 400,000 variables, one per thread, each variable having its own dynamic extent flowing through callees, and callees of callees, and callees of callees of callees.
-- Each variable has one value as usual.
-Write out X_1, X_2, etc
 
