@@ -256,7 +256,9 @@ methods invoked transitively by them.)
 
 The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
-that extent.
+that extent. The extent local is bound to the value.
+
+
 
 ### For example
 
@@ -264,13 +266,17 @@ The following example uses an extent local variable to make
 credentials available to callees.
 
 The ultimate caller is the server framework. It is resoponsible for
-initializing an extent local variable with some credentials. The
-framework then runs some piece of code (supplied by the user) that
-connects to a database. The `connectDatabase()` method then uses the
-credentials set by its caller's caller to determine if its caller may
-access the database. It is as if the `connectDatabase()` method has an
+binding an extent local variable to some credentials. The framework
+then runs some piece of code (supplied by the user) that connects to a
+database. The `connectDatabase()` method, also part of the framework,
+then uses the credentials bound by its caller's caller (also the
+framework) to determine if its caller, the user code, may connect to
+the database. It is as if the `connectDatabase()` method has an
 invisible parameter to represent the caller's credentials, even though
 the caller itself did not pass them.
+
+(We assume that the `Credentials` class is not widely accessible and
+cannot be instantiated by user code.)
 
 ```
 class ServerFramework {
@@ -325,14 +331,17 @@ final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
 operation. [ Do we need that sentence? ]
 
-### Shadowing
+### Nested bindings
+
+We said earlier than an extent local variable is bound to a value. It
+is also possible to _re-bind_ an extent local variable to a new value.
 
 The example above we show the user code physically within the server
 framework class. Therefore the notional user code can access the
 CREDENTIALS and attempt to rebind it. However, in real life we
 couldn't. Even though the client might be able to re-bind
 `ServerFramework.CREDENTIALS`, there should be no way to forge
-legitimate crecentials, because the payload class doesn't allow
+legitimate credentials, because the payload class doesn't allow
 unprivileged classes to create new credentials.
 
 It is sometimes useful to be able to re-bind an already-bound extent
