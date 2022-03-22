@@ -363,7 +363,7 @@ class ServerFramework {
         ... as before ...
     }
     
-    log(Supplier<String> supplier) {
+    void log(Supplier<String> supplier) {
       Credentials creds = ServerFramework.CREDENTIALS.get();
       creds = creds.withLowerTrust();
       String s = ExtentLocal.where(ServerFramework.CREDENTIALS, creds)
@@ -379,6 +379,10 @@ lambda above.
 
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
+
+(Note: We use `call()`, which takes a `Callable<String>` here, rather
+than `run()` which takes a `Runnable`, because Java's `Callable`s
+return an object, whereas `Runnable`s return nothing.)
 
 ### In summary
 
