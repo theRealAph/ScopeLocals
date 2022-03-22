@@ -177,7 +177,7 @@ shared between threads. Every child thread ends up carrying a local
 copy of its parent's entire set of `InheritableThreadLocal`s.
 
 For such uses we want sharing, but we do not want mutability. It
-should be popssible for a child thread to share its parent's context,
+should be possible for a child thread to share its parent's context,
 but it's not necessary for a child to mutate it. In contrast, thread
 local variables assume mutability. While it makes sese for a parent to
 share context with a million children, it makes no sense at all for
@@ -219,13 +219,13 @@ it should be immutable, but is is a terrible thing when a caller's
 context is mutable by callees.
 
 It would be ideal if the Java Platform provided a way to have per
-thread context for millions of virtual threads that is immutable by
-default and, given the low cost of forking virtual threads,
-inheritable. Because these ideal per thread variables are immutable,
-thir data can be easily shared by child threads, rather than copied to
-child threads. Thread local variables were the 90s realization of per
-thread variabels; we need a better realization of per thread vairables
-for the modern era.
+thread context for millions of virtual threads that is immutable and,
+given the low cost of forking virtual threads, inheritable. Because
+these ideal per thread variables are immutable, thir data can be
+easily shared by child threads, rather than copied to child
+threads. Thread local variables were the 90s realization of per thread
+variabels; we need a better realization of per thread vairables for
+the modern era.
 
 Because these ideal per thread variables are immutable and
 lightweight, they align well with the thread-per-request model given
