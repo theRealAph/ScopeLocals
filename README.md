@@ -347,7 +347,7 @@ class ServerFramework {
         ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
                    .run(() -> { ...
                                 var connection = connectDatabase();
-                                var x = y();
+                                y(() -> log());
                                 ... });
     }
 
@@ -360,15 +360,10 @@ class ServerFramework {
         return new Connection();
     }
     
-    y() {
+    y(Runnable r) {
       Credentials creds = ServerFramework.CREDENTIALS.get();
       creds = creds.withLowerTrust();
-      ExtentLocal.where(ServerFramework, creds).run(() -> {
-        :
-        // User code
-        // Download random stuff from the internet
-        :
-      });
+      ExtentLocal.where(ServerFramework, creds).run(r);
     }
 }
 ```
