@@ -360,12 +360,7 @@ class ServerFramework {
     }
 
     Connection connectDatabase() {
-        // Use the caller's credentials
-        var creds = ServerFramework.CREDENTIALS.get();
-        if (! creds.equals ...) {
-            throw new SecurityException("Invalid credentials");
-        }
-        return new Connection();
+        ... as before ...
     }
     
     log(Supplier<String> supplier) {
