@@ -280,10 +280,10 @@ cannot be instantiated by user code.)
 
 ```
 class ServerFramework {
-    private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
+    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
 
     void processRequest() {
-        ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
+        ExtentLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
                    .run(() -> { ...
                                 var connection = connectDatabase();
                                 ... });
@@ -291,7 +291,7 @@ class ServerFramework {
 
     Connection connectDatabase() {
         // Use the caller's credentials
-        var creds = ServerFramework.CREDENTIALS.get();
+        var creds = ServerFramework.USER_CREDENTIALS.get();
         if (! creds.equals ...) {
             throw new SecurityException("Invalid credentials");
         }
@@ -310,13 +310,13 @@ is inheritable such that its value is usable by a child thread. The
 server framework can easily achieve this.
 
 The `ExtentLocal.get()` operation could be thought of as
-`Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
+`Thread.currentThread().getExtentLocal(DatabaseConnector.USER_CREDENTIALS)`,
 which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
 An extent local acquires (we say: _is bound to_) a value on entry to a
 extent; when that extent terminates, the previous value (or none) is
-restored. In this case, the extent of `ServerFramework.CREDENTIALS`'s
+restored. In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
 binding is the duration of the Lambda invoked by `run()`. In the
 example above, the extent unfolds from process request, through a
 lambda, to connectDatabase(). The frame for connectDatabase() is the
@@ -333,14 +333,15 @@ operation. [ Do we need that sentence? ]
 
 ### Nested bindings
 
-We said earlier than an extent local variable is bound to a value. It
-is also possible to _re-bind_ an extent local variable to a new value.
+We said earlier than an extent local variable is bound to a
+value. Within the extent of that binding it is possible to _re-bind_
+the variable to a new value.
 
 The example above we show the user code physically within the server
 framework class. Therefore the notional user code can access the
-CREDENTIALS and attempt to rebind it. However, in real life we
+`USER_CREDENTIALS` and attempt to rebind it. However, in real life we
 couldn't. Even though the client might be able to re-bind
-`ServerFramework.CREDENTIALS`, there should be no way to forge
+`ServerFramework.USER_CREDENTIALS`, there should be no way to forge
 legitimate credentials, because the payload class doesn't allow
 unprivileged classes to create new credentials.
 
@@ -358,10 +359,10 @@ produce Supplier<String> rather than String itself.
 
 ```
 class ServerFramework {
-    private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
+    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
 
     void processRequest() {
-        ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
+        ExtentLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
                    .run(() -> { ...
                                 var connection = connectDatabase();
                                 log(() -> "Hello, World!");
@@ -373,9 +374,9 @@ class ServerFramework {
     }
     
     void log(Supplier<String> supplier) {
-      Credentials creds = ServerFramework.CREDENTIALS.get();
+      Credentials creds = ServerFramework.USER_CREDENTIALS.get();
       creds = creds.withLowerTrust();
-      String s = ExtentLocal.where(ServerFramework.CREDENTIALS, creds)
+      String s = ExtentLocal.where(ServerFramework.USER_CREDENTIALS, creds)
                  .call(() -> supplier.get());
       ... maybe print s
     }
@@ -386,7 +387,7 @@ class ServerFramework {
 This "shadowing" only extends until the end of the extent of the
 lambda above.
 
-(Note: This code example assumes that `CREDENTIALS` is already bound
+(Note: This code example assumes that `USER_CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
 (Note: Normally, user code run by the framework is not expected to
