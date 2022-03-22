@@ -381,9 +381,9 @@ lambda above.
 to a highly privileged set of credentials.)
 
 (Note: Normally, user code run by the framework is not expected to
-return a result; the processRequest() method uses run(), which takes a
-`Runnable` and returns nothing. However, the user code supplied to
-`log()` is expected to return a result. Therefore, the log() method
+return a result, the processRequest() method uses run(), which takes a
+`Runnable` and returns nothing. In contrast, the user code supplied to
+`log()` is expected to return a result. Therefore, the `log()` method
 uses call(), which takes a `Callable<String>` and returns a `String`.)
 
 ### In summary
