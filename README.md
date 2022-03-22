@@ -380,11 +380,11 @@ lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-(Note: Normally, user code run by the fraework is not expected to
-return a result; however, the user code supplied to log() is expected
-to return a result. Therefore, the log() method uses call(), which
-takes a `Callable<String>` and returns a `String`, whereas the
-processRequest() uses run(), which returns nothing.)
+(Note: Normally, user code run by the framework is not expected to
+return a result; the processRequest() method uses run(), which takes a
+`Callable` and returns nothing. However, the user code supplied to
+log() is expected to return a result. Therefore, the log() method uses
+call(), which takes a `Callable<String>` and returns a `String`.)
 
 ### In summary
 
