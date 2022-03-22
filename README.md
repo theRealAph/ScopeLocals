@@ -60,10 +60,30 @@ work.
 
 ### Thread local variables
 
-Since Java 1.2, ThreadLocals have been the standard way to associate
+Since Java 1.2, `ThreadLocal`s have been the standard way to associate
 context with a thread.
 
-An `ThreadLocal` instance such as `X` above is a key that is used to
+```
+class Example {
+
+    // Define a thread local variable that may be bound to Integer values:
+    static final ScopeLocal<Integer> X = ScopeLocal.newInstance();
+
+    void anotherMethod() {
+        for (int i = 0; i < 10; i++) {
+            System.out.println(X.get() * i);
+        }
+    }
+
+    void printIt() {
+        // Set X to the value 5, then run anotherMethod()
+        X.set(5);
+        anotherMethod();
+    }
+}
+```
+
+A `ThreadLocal` instance such as `X` above is a key that is used to
 look up a value in the current thread. Despite `X` being declared
 static in class `Example`, there is _not_ exactly one incarnation of
 the field shared across all instances of Foo; instead, there are
@@ -71,14 +91,29 @@ _multiple_ incarnations of the field, one per thread, and the
 incarnation of `X` that is used when code performs a field access
 (`X.get()`) depends on the thread which is executing the code.
 
-Unfortunately, ThreadLocals have some disadvantages when used for this
-purpose.
+The `Thread` object returned by `Thread.currentThread()` and
+`ThreadLocal` have a relationship between the scenes.
+`ThreadLocal.get()` is caller sensitive: there is a hidden parameter,
+the current thread. (A `ThreadLocal` works behind the scenes with the
+current thread to do the magic.)
+
+In other words, the Java runtime has long supported low-ceremony
+contextual per-thread information.
+
+Unfortunately, ThreadLocals have some disadvantages when used for the
+purpose of carrying contexts.
 
 In essence, a `ThreadLocal` is a key that may be used to set and get
 the current thread's copy of a thread-local variable. Once set in a
 thread, its value my be returned by `get()`. Once set, a ThreadLocal
 is _persistent_: that is to say, it is retained for the lifetime of
 the thread or until a method running on that thread calls `remove()`
+
+Also, a thread-local variable is _mutable_: that is to say, everyone
+who can access a `ThreadLocal`'s `get()` can alse `set()` it to a
+different value. Frameworks can wrap `ThreadLocal`s to make sure they
+cannot be set inappropriately, but you're still carrying the cost of
+mutability.
 
 It is unfortunately common for developers to forget to remove a
 `ThreadLocal`, which can lead to a long-term memory leak. Even though
@@ -142,6 +177,8 @@ context with a million children, it makes no sense at all for them to
 maintain mutable copies of it.
 
 ### The problem with unconstrained mutability
+
+Mutability by default is a bad decision.
 
 [ TLs being mutable fies in the face of the repeated advice in
 _Effective Java_ to minimize mutability.
