@@ -278,7 +278,7 @@ class ServerFramework {
 
     void processRequest() {
         ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
-                   .run(() -> { ...                
+                   .run(() -> { ...
                                 var connection = connectDatabase();
                                 ... });
     }
@@ -302,11 +302,6 @@ thread-per-request model. Starting a new thread means that
 use the extent local variable. Fortunately, the extent local variable
 is inheritable such that its value is usable by a child thread. The
 server framework can easily achieve this.
-
-Even though the client might be able to re-bind
-`ServerFramework.CREDENTIALS`, there should be no way to forge
-legitimate crecentials, because the payload class doesn't allow
-unprivileged classes to create new credentials.
 
 The example above we show the user code physically within the server
 framework class. Therefore the notional user code can access the
@@ -335,21 +330,6 @@ final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
 operation. [ Do we need that sentence? ]
 
-In summary, extent locals have the following properties:
-
-* _Locally-defined extent_: The values of `x` and `y` are only bound
-  in the extent of `run()`.
-* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
-  once bound, are effectively final.
-* _Simple and fast code_: In most cases an extent-local `x.get()` is as
-  fast as a local variable `x`. This is true regardless of how far
-  away `x.get()` is from the point that the extent local `x` is bound.
-* _Structure_: These properties also also make it easier for a reader
-  to reason about programs, in much the same way that declaring a
-  field of a variable `final` does.
-
-## Uses of extent locals
-
 ### Shadowing
 
 It is sometimes useful to be able to re-bind an already-bound extent
@@ -371,6 +351,28 @@ lambda above.
 
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
+
+Even though the client might be able to re-bind
+`ServerFramework.CREDENTIALS`, there should be no way to forge
+legitimate crecentials, because the payload class doesn't allow
+unprivileged classes to create new credentials.
+
+### In summary
+
+Extent locals have the following properties:
+
+* _Locally-defined extent_: The values of `x` and `y` are only bound
+  in the extent of `run()`.
+* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
+  once bound, are effectively final.
+* _Simple and fast code_: In most cases an extent-local `x.get()` is as
+  fast as a local variable `x`. This is true regardless of how far
+  away `x.get()` is from the point that the extent local `x` is bound.
+* _Structure_: These properties also also make it easier for a reader
+  to reason about programs, in much the same way that declaring a
+  field of a variable `final` does.
+
+## Uses of extent locals
 
 ## Where can extent local variables _not_ replace thread local variables?
 
