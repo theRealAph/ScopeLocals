@@ -303,11 +303,6 @@ use the extent local variable. Fortunately, the extent local variable
 is inheritable such that its value is usable by a child thread. The
 server framework can easily achieve this.
 
-The example above we show the user code physically within the server
-framework class. Therefore the notional user code can access the
-CREDENTIALS and attempt to rebind it. However, in real life we
-couldn't.
-
 The `ExtentLocal.get()` operation could be thought of as
 `Thread.currentThread().getExtentLocal(DatabaseConnector.CREDENTIALS)`,
 which clearly shows that a `ExtentLocal` instance is a key used
@@ -352,7 +347,10 @@ lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-Even though the client might be able to re-bind
+The example above we show the user code physically within the server
+framework class. Therefore the notional user code can access the
+CREDENTIALS and attempt to rebind it. However, in real life we
+couldn't. Even though the client might be able to re-bind
 `ServerFramework.CREDENTIALS`, there should be no way to forge
 legitimate crecentials, because the payload class doesn't allow
 unprivileged classes to create new credentials.
