@@ -380,9 +380,11 @@ lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-(Note: We use `call()`, which takes a `Callable<String>` here, rather
-than `run()` which takes a `Runnable`, because Java's `Callable`s
-return an object, whereas `Runnable`s return nothing.)
+(Note: Normally, user code run by the fraework is not expected to
+return a result; however, the user code supplied to log() is expected
+to return a result. Therefore, the log() method uses call(), which
+takes a Callable<String> and returns a String, whereas the
+processRequest() uses run(), which returns nothing.)
 
 ### In summary
 
