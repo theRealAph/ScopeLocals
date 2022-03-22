@@ -67,18 +67,18 @@ context with a thread.
 class Example {
 
     // Define a thread local variable that may be bound to Integer values:
-    static final ScopeLocal<Integer> X = ScopeLocal.newInstance();
-
-    void anotherMethod() {
-        for (int i = 0; i < 10; i++) {
-            System.out.println(X.get() * i);
-        }
-    }
+    static final ThreadLocal<Integer> X = new ThreadLocal();
 
     void printIt() {
         // Set X to the value 5, then run anotherMethod()
         X.set(5);
         anotherMethod();
+    }
+
+    void anotherMethod() {
+        for (int i = 0; i < 10; i++) {
+            System.out.println(X.get() * i);
+        }
     }
 }
 ```
