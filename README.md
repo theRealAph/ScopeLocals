@@ -267,7 +267,7 @@ The ultimate caller is the server framework. It is resoponsible for
 initializing an extent local variable with some credentials. The
 framework then runs some piece of code (supplied by the user) that
 connects to a database. The `connectDatabase()` method then uses the
-credentials set by its caller's caller to determine if its caller to
+credentials set by its caller's caller to determine if its caller may
 access the database. It is as if the `connectDatabase()` method has an
 invisible parameter to represent the caller's credentials, even though
 the caller itself did not pass them.
@@ -285,7 +285,8 @@ class ServerFramework {
 
     Connection connectDatabase() {
         // Use the caller's credentials
-        if (! ServerFramework.CREDENTIALS.get().equals ...) {
+        var creds = ServerFramework.CREDENTIALS.get();
+        if (! creds.equals ...) {
             throw new SecurityException("Invalid credentials");
         }
         return new Connection();
@@ -293,11 +294,11 @@ class ServerFramework {
 }
 ```
 
-A server frameowrk may configure the behaviour of `run()` so that the
+A server framework may configure the behaviour of `run()` so that the
 user code will be run in a new virtual thread. This witnesses a
 thread-per-request model. Starting a new thread means that
-`connectDatabase()` will run in a different fread than
-`processrequest()`.  Plainly, the body of connectDatabase() needs to
+`connectDatabase()` will run in a different thread than
+`processrequest()`.  Plainly, the body of `connectDatabase()` needs to
 use the extent local variable. Fortunately, the extent local variable
 is inheritable such that its value is usable by a child thread. The
 server framework can easily achieve this.
