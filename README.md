@@ -107,13 +107,13 @@ In essence, a `ThreadLocal` is a key that may be used to set and get
 the current thread's copy of a thread-local variable. Once set in a
 thread, its value my be returned by `get()`. Once set, a ThreadLocal
 is _persistent_: that is to say, it is retained for the lifetime of
-the thread or until a method running on that thread calls `remove()`
+the thread, or until a method running on that thread calls `remove()`
 
-Also, a thread-local variable is _mutable_: that is to say, everyone
-who can access a `ThreadLocal`'s `get()` can alse `set()` it to a
-different value. Frameworks can wrap `ThreadLocal`s to make sure they
-cannot be set inappropriately, but you're still carrying the cost of
-mutability.
+Also, every thread-local variable is _mutable_: that is to say,
+everyone who can access a `ThreadLocal`'s `get()` can alse `set()` it
+to a different value, or `remove()` is altogether. Frameworks can wrap
+`ThreadLocal`s to make sure they cannot be set inappropriately, but
+you're still carrying the cost of mutability.
 
 It is unfortunately common for developers to forget to remove a
 `ThreadLocal`, which can lead to a long-term memory leak. Even though
@@ -135,6 +135,11 @@ instances with data via a thread local map.
 
 ### Virtual threads versus thread local variables
 
+The need for something like extent local variables arose in the
+context of Project Loom's virtual threads. These are cheap and
+plentiful, unlike today's platform threads which are expensive and
+scarce.
+
 Platform Threads are:
 
 * Long-running
@@ -153,11 +158,13 @@ example, they may share a logger on an output stream. Perhaps they may
 share some kind of security policy too.
 
 Because virtual threads are still threads, it is legitimate to for a
-virtual thread to carry thread-local variables. The short-running
-nature of virtual threads means that the crap programming model of
-thread locals doesn't matter because it doesn't matter when they die
-at a prodigous rate - `remove()` isn't necessary when a thread,
-virtual or not, terminates.
+virtual thread to carry thread-local variables. The short lifetime of
+virtual threads means that the programming model of thread locals
+doesn't matter, because it doesn't matter when they die at a prodigous
+rate - `remove()` isn't necessary when a thread, virtual or not,
+terminates. However, if you have a million threads and every one has
+its own inevitably mutable set of thread local variables, the memory
+footprint may become significant.
 
 Unfortunately, thread locals present another problem in the era of
 virtual threads, because thread locals may be inheritable.
@@ -171,10 +178,10 @@ copy of its parent's entire set of `InheritableThreadLocal`s.
 
 For such uses we want sharing, but we do not want mutability. It
 should be popssible for a child thread to share its parent's context,
-but it's not necessary to mutate it. In contrast, thread local
-variables assume mutability. While it makes sese for a parent to share
-context with a million children, it makes no sense at all for them to
-maintain mutable copies of it.
+but it's not necessary for a child to mutate it. In contrast, thread
+local variables assume mutability. While it makes sese for a parent to
+share context with a million children, it makes no sense at all for
+them to maintain mutable copies of that context.
 
 ### The problem with unconstrained mutability
 
@@ -226,13 +233,13 @@ new life by virtual threads
 
 ## Description
 
-An extent local variable is a per thread vairable that allows context
+An extent local variable is a per thread variable that allows context
 to be set in a caller and read by callees. Unlike a thread local
-variable, an extent local variable is immutable. Context can be
-anything from a business object to an instance of a system-wide
-logger.
+variable, an extent local variable is immutable: there is no `set()`
+method. Context can be anything from a business object to an instance
+of a system-wide logger.
 
-The term extent local derives from the idea of extent in the Java
+The term extent local derives from the idea of an extent in the Java
 Virtual Machine. The JVM specification describes an extent as follows:
 
 "It is often useful to describe the situation where, in a given
@@ -247,9 +254,8 @@ given method m1 is called the _bottom most frame_ of the extent."
 (That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.)
 
-
 The value associated with an extent local variable is defined in the
-bottom most frame of an extent, and is accessible in every frame of
+bottom most frame of some extent, and is accessible in every frame of
 that extent.
 
 ### For example
@@ -259,12 +265,12 @@ credentials available to callees.
 
 The ultimate caller is the server framework. It is resoponsible for
 initializing an extent local variable with some credentials. The
-framework then runs some piece of code (supplied by the user) thread
-that connects to a database. The connectDatabase() method then uses
-the credentials set by it's caller's caller to determine if its caller
-to access the database. It is as if the connectDatabase() method has
-an invisible parameter to represent the caller's credentials, even
-though the caller itself did not pass them.
+framework then runs some piece of code (supplied by the user) that
+connects to a database. The `connectDatabase()` method then uses the
+credentials set by its caller's caller to determine if its caller to
+access the database. It is as if the `connectDatabase()` method has an
+invisible parameter to represent the caller's credentials, even though
+the caller itself did not pass them.
 
 ```
 class ServerFramework {
@@ -287,17 +293,17 @@ class ServerFramework {
 }
 ```
 
-A server frameowrk may configure the behaviour of run so that the user
-code can be run in a new virtual thread. This witnesses a
+A server frameowrk may configure the behaviour of `run()` so that the
+user code will be run in a new virtual thread. This witnesses a
 thread-per-request model. Starting a new thread means that
-connectDatabase() will run in a different fread than processrequest().
-Plainly, the body of connectDatabase() need to thuse the extent local
-variable. Fortunately, the extent local variable is inheritable such
-that its value is usable by a child thread. The server framework
-can easily achieve this.
+`connectDatabase()` will run in a different fread than
+`processrequest()`.  Plainly, the body of connectDatabase() needs to
+use the extent local variable. Fortunately, the extent local variable
+is inheritable such that its value is usable by a child thread. The
+server framework can easily achieve this.
 
 Even though the client might be able to re-bind
-ServerFramework.CREDENTIALS, there should be no way to forge
+`ServerFramework.CREDENTIALS`, there should be no way to forge
 legitimate crecentials, because the payload class doesn't allow
 unprivileged classes to create new credentials.
 
@@ -313,22 +319,22 @@ to look up the current thread's incarnation of an extent local.
 
 An extent local acquires (we say: _is bound to_) a value on entry to a
 extent; when that extent terminates, the previous value (or none) is
-restored. In this case, the extent of `X`'s binding is the duration of
-the Lambda invoked by `run()`. In the example above, the extent
-unfolds from process request, through a lambda, to
-connectDatabase(). The frame for connectDatabase() is the topmost
-frame; the frame for processRequest() is the bottom most frame. If
-connectDatbase() called more methods, then those methods would also be
-able to use the extent local variable to get the needful. None of the
-methods in the extent can mutate the extent local variable so that it
-holds different credentials.
+restored. In this case, the extent of `ServerFramework.CREDENTIALS`'s
+binding is the duration of the Lambda invoked by `run()`. In the
+example above, the extent unfolds from process request, through a
+lambda, to connectDatabase(). The frame for connectDatabase() is the
+topmost frame; the frame for processRequest() is the bottom most
+frame. If connectDatbase() called more methods, then those methods
+would also be able to use the extent local variable to get the
+needful. None of the methods in the extent can mutate the extent local
+variable so that it holds different credentials.
 
 One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
 operation. [ Do we need that sentence? ]
 
-Extent locals have the following properties:
+In summary, extent locals have the following properties:
 
 * _Locally-defined extent_: The values of `x` and `y` are only bound
   in the extent of `run()`.
@@ -365,15 +371,39 @@ lambda above.
 (Note: This code example assumes that `CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-## Replacing some uses of `ThreadLocal` with extent locals
+## Where can extent local variables _not_ replace thread local variables?
 
-Because extent locals have a well-defined lifetime, the block in which
-they were bound, they can never be used in a way that's identical to
-the way thread-local variables are used. Therefore, some code changes
-will be required to switch from thread locals to extent locals.
+There are cases where thread local variables are more appropriate than
+extent local variables. For example, one popular use of `ThreadLocal`
+is to cache objects that are expensive to create. One notorious
+example is `java.text.DateFormat`, which is mutable so cannot be
+shared between threads without synchronization. In this case, creating
+a thread local `DateFormat` object which persists for the lifetime of
+the thread might be exactly what you need:
 
-For example, one popular use of thread local variables 
+```
+public class Example2 {
 
+    private static ThreadLocal<DateFormat> SDF = new ThreadLocal<DateFormat>() {
+        protected DateFormat initialValue()
+        {
+            return new SimpleDateFormat("yyyy-MM-dd");
+        }
+    };
+
+    static void printToday() {
+        System.out.println(SDF.get().format(new Date()));
+    }
+
+    public static void main(String[] args) {
+        printToday();
+    }
+}
+```
+
+(In hindsight, making `DateFormat` mutable was a mistake, and we'd do
+better today, but it was Java 1.1 in 1997. `ThreadLocal` makes it
+possible to use this utility class in a multi-threaded program.)
 
 ## API
 
@@ -391,13 +421,13 @@ We have experimented with a modified version of `ThreadLocal` that
 supports some of the characteristics of extent locals. However,
 carrying the additional baggage of `ThreadLocal` results in an
 implementation that is unduly burdensome, or an API that returns
-`UnsupportedOperationException` for much core functionality, or
-both. It is better, therefore, not to do that but to give extent locals
-a separate identity from thread locals.
+`UnsupportedOperationException` for much core functionality, or both.
+And we'd still have the problem of memory management.
 
+It is better, therefore, not to do modify `ThreadLocal` but to give
+extent locals a separate identity from thread locals.
 
-
-* New Stuff
+## New Stuff
 
 The run() method is the bottom-most frame of the extent in which the
 extent local variable is defined.
@@ -407,7 +437,7 @@ locals. Once set, a thread local variable is defined for the entie
 lifetime of its thread. an extent local variable is defined for its
 extent.
 
-** Thread inheritance
+## Thread inheritance
 
 Like a thread-local variable, an extent-local variable can be 
 _inheritable_. This means that the state of the extent-local variable in 
@@ -448,13 +478,6 @@ A TL is always mutable but only optionally inheritable. The fact that
 TLs are always inheritable requires inheritability to be turned
 off. If a TL were immutable, they would be cheaper to inherit, which
 in turn would mean inheritability could be enabled more widely.
-
-
-## Alternatives
-
-We could have had a non-settable TL that threw an
-`UnsupportedOperationException`, but we'd still have the problem of
-memory management.
 
 
 # Orphan paragraphs
