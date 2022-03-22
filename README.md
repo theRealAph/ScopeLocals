@@ -337,7 +337,15 @@ unprivileged classes to create new credentials.
 
 It is sometimes useful to be able to re-bind an already-bound extent
 local. For example, a privileged method may need to connect to a
-database with a less-privileged set of credentials, like so:
+database with a less-privileged set of credentials.
+
+Another use for non-string results is when formatting messages for
+logging. Many logging calls are for debug information, and often debug
+logging is turned off. Many frameworks allow you to provide a
+Supplier<String> for log messages that is only invoked if the message
+is actually going to be logged, to avoid the overhead of formatting a
+string that is going to be thrown away. A lazy policy object could
+produce Supplier<String> rather than String itself.
 
 ```
 class ServerFramework {
@@ -347,7 +355,7 @@ class ServerFramework {
         ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
                    .run(() -> { ...
                                 var connection = connectDatabase();
-                                y(() -> log());
+                                
                                 ... });
     }
 
@@ -360,10 +368,12 @@ class ServerFramework {
         return new Connection();
     }
     
-    y(Runnable r) {
+    log(Supplier<String> supplier) {
       Credentials creds = ServerFramework.CREDENTIALS.get();
       creds = creds.withLowerTrust();
-      ExtentLocal.where(ServerFramework, creds).run(r);
+      String s = ExtentLocal.where(ServerFramework.CREDENTIALS, creds)
+                 .call(() -> supplier.get());
+      ... maybe print s
     }
 }
 ```
