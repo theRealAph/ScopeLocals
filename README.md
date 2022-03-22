@@ -327,26 +327,6 @@ operation. [ Do we need that sentence? ]
 
 ### Shadowing
 
-It is sometimes useful to be able to re-bind an already-bound extent
-local. For example, a privileged method may need to connect to a
-database with a less-privileged set of credentials, like so:
-
-```
-      Credentials creds = CREDENTIALS.get();
-      creds = creds.withLowerTrust();
-      ExtentLocal.where(CREDENTIALS, creds).run(() -> {
-        :
-        Connection connection = connectDatabase();
-        :
-      });
-```
-
-This "shadowing" only extends until the end of the extent of the
-lambda above.
-
-(Note: This code example assumes that `CREDENTIALS` is already bound
-to a highly privileged set of credentials.)
-
 The example above we show the user code physically within the server
 framework class. Therefore the notional user code can access the
 CREDENTIALS and attempt to rebind it. However, in real life we
@@ -354,6 +334,51 @@ couldn't. Even though the client might be able to re-bind
 `ServerFramework.CREDENTIALS`, there should be no way to forge
 legitimate crecentials, because the payload class doesn't allow
 unprivileged classes to create new credentials.
+
+It is sometimes useful to be able to re-bind an already-bound extent
+local. For example, a privileged method may need to connect to a
+database with a less-privileged set of credentials, like so:
+
+```
+class ServerFramework {
+    private static final ExtentLocal<Credentials> CREDENTIALS = ExtentLocal.newInstance();
+
+    void processRequest() {
+        ExtentLocal.where(ServerFramework.CREDENTIALS, new Credentials())
+                   .run(() -> { ...
+                                var connection = connectDatabase();
+                                var x = y();
+                                ... });
+    }
+
+    Connection connectDatabase() {
+        // Use the caller's credentials
+        var creds = ServerFramework.CREDENTIALS.get();
+        if (! creds.equals ...) {
+            throw new SecurityException("Invalid credentials");
+        }
+        return new Connection();
+    }
+    
+    y() {
+      Credentials creds = ServerFramework.CREDENTIALS.get();
+      creds = creds.withLowerTrust();
+      ExtentLocal.where(ServerFramework, creds).run(() -> {
+        :
+        // User code
+        // Download random stuff from the internet
+        :
+      });
+    }
+}
+```
+
+
+This "shadowing" only extends until the end of the extent of the
+lambda above.
+
+(Note: This code example assumes that `CREDENTIALS` is already bound
+to a highly privileged set of credentials.)
 
 ### In summary
 
