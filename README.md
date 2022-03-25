@@ -101,6 +101,8 @@ current thread to do the magic.)
 In other words, the Java runtime has long supported low-ceremony
 contextual per-thread information.
 
+### Thread local variables are not ideal for contexts
+
 Unfortunately, ThreadLocals have some disadvantages when used for the
 purpose of carrying contexts.
 
