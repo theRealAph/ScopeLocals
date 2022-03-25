@@ -288,8 +288,12 @@ class ServerFramework {
 }
 ```
 
+### Binding and unboud extent local variables
+
 An extent local acquires (we say: _is bound to_) a value on entry to an
 extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
+
+If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown. 
 
 ### Using extent local variables with threads
 
