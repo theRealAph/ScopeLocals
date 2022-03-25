@@ -116,23 +116,6 @@ to a different value, or `remove()` is altogether. Frameworks can wrap
 `ThreadLocal`s to make sure they cannot be set inappropriately, but
 you're still carrying the cost of mutability.
 
-It is unfortunately common for developers to forget to remove a
-`ThreadLocal`, which can lead to a long-term memory leak. Even though
-the program has long since moved on from having any use for an object,
-it will not be garbage collected if no method has called
-`remove()`. 
-
-It would be better if the context associated with a thread were to be
-cleaned up automatically. Also, having to call `remove()` on a
-`ThreadLocal` to clean it up when it's no longer in use is somewhat
-antithetical to the way that Java usually works.
-
-In practice, thread locals are managed by the `Thread` itself.  Every
-thread must maintain a thread local map. This is an object that maps
-from `ThreadLocal` instances to each thread's copy of that
-thread-local variable. Just as a program associates data with a
-thread-local variable, the Java runtime associates a `ThreadLocal`
-instances with data via a thread local map.
 
 ### The problem with unconstrained mutability
 
@@ -153,17 +136,30 @@ example when used to return a hidden value from a method to some
 distant caller, far away in a deep call stack. This leads to code
 whose structure is hard to discern, let alone maintain.
 
-While using a thread local variable to store context seems reasonable
-at first, it suffers from unconstrained mutability. Any callee with
-access to `ThreadLocal.get()` also can call `set()` or even
-`remove()`. This results in a kind of "action at a distance" where the
-relationship between a caller which sets the context is impossible to
-determine from the code alone.
-
 It is far better, then, to have the structure (of what?) exposed in
 the code, so that it is possible to write maintainable
 programs. Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
+
+### Thread locals and manual cleanup
+
+It is unfortunately common for developers to forget to remove a
+`ThreadLocal`, which can lead to a long-term memory leak. Even though
+the program has long since moved on from having any use for an object,
+it will not be garbage collected if no method has called
+`remove()`. 
+
+It would be better if the context associated with a thread were to be
+cleaned up automatically. Also, having to call `remove()` on a
+`ThreadLocal` to clean it up when it's no longer in use is somewhat
+antithetical to the way that Java usually works.
+
+In practice, thread locals are managed by the `Thread` itself.  Every
+thread must maintain a thread local map. This is an object that maps
+from `ThreadLocal` instances to each thread's copy of that
+thread-local variable. Just as a program associates data with a
+thread-local variable, the Java runtime associates a `ThreadLocal`
+instances with data via a thread local map.
 
 ### Inheritance versus mutability
 
