@@ -48,8 +48,6 @@ onerous. But it would not just be inconvenient. Having to explicitly
 add loggers everywhere would constrain the evolution of that library's
 API. ]
 
-
-
 ### Not static fields!
 
 The Java language has never had a really good way to do this. Static
@@ -136,6 +134,37 @@ thread-local variable. Just as a program associates data with a
 thread-local variable, the Java runtime associates a `ThreadLocal`
 instances with data via a thread local map.
 
+### The problem with unconstrained mutability
+
+Mutability by default is a bad decision.
+
+[ TLs being mutable fies in the face of the repeated advice in
+_Effective Java_ to minimize mutability.
+
+_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
+try-with-resources and try...finally. Item 17: minimize mutability:
+don't provide methods that modify the object's state. Yet
+`ThreadLocal` depends on these things we're advised to minimize and
+avoid. ]
+
+Thread local variables are prone to abuse. Fundamentally, programming
+with thread local variables can lead to spaghetti-like coding, for
+example when used to return a hidden value from a method to some
+distant caller, far away in a deep call stack. This leads to code
+whose structure is hard to discern, let alone maintain.
+
+While using a thread local variable to store context seems reasonable
+at first, it suffers from unconstrained mutability. Any callee with
+access to `ThreadLocal.get()` also can call `set()` or even
+`remove()`. This results in a kind of "action at a distance" where the
+relationship between a caller which sets the context is impossible to
+determine from the code alone.
+
+It is far better, then, to have the structure (of what?) exposed in
+the code, so that it is possible to write maintainable
+programs. Maintainability is more important than programming
+tricks. Reading a program is more important than writing it.
+
 ### Virtual threads versus thread local variables
 
 The need for something like extent local variables arose in the
@@ -185,37 +214,6 @@ but it's not necessary for a child to mutate it. In contrast, thread
 local variables assume mutability. While it makes sese for a parent to
 share context with a million children, it makes no sense at all for
 them to maintain mutable copies of that context.
-
-### The problem with unconstrained mutability
-
-Mutability by default is a bad decision.
-
-[ TLs being mutable fies in the face of the repeated advice in
-_Effective Java_ to minimize mutability.
-
-_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
-try-with-resources and try...finally. Item 17: minimize mutability:
-don't provide methods that modify the object's state. Yet
-`ThreadLocal` depends on these things we're advised to minimize and
-avoid. ]
-
-Thread local variables are prone to abuse. Fundamentally, programming
-with thread local variables can lead to spaghetti-like coding, for
-example when used to return a hidden value from a method to some
-distant caller, far away in a deep call stack. This leads to code
-whose structure is hard to discern, let alone maintain.
-
-While using a thread local variable to store context seems reasonable
-at first, it suffers from unconstrained mutability. Any callee with
-access to `ThreadLocal.get()` also can call `set()` or even
-`remove()`. This results in a kind of "action at a distance" where the
-relationship between a caller which sets the context is impossible to
-determine from the code alone.
-
-It is far better, then, to have the structure (of what?) exposed in
-the code, so that it is possible to write maintainable
-programs. Maintainability is more important than programming
-tricks. Reading a program is more important than writing it.
 
 Context is a fine thing to be propagated from caller to callee, where
 it should be immutable, but is is a terrible thing when a caller's
