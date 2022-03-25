@@ -56,7 +56,7 @@ The Java language has never had a really good way to do this. Static
 fields might appear at first glance to be a solution. However, in a
 multi-threaded application, which includes the vast majority of server
 applications, it is useful to associate context with a thread, rather
-than globally. Static fields are global in nature, so won't
+than globally. Static fields are shared by all threads, so this won't
 work.
 
 ### Thread local variables
