@@ -290,11 +290,18 @@ class ServerFramework {
 
 ### Binding and unboud extent local variables
 
+One useful way to think of extent locals is as invisible, effectively
+final, parameters that are passed through every method invocation.
+These parameters will be accessible within the extent of a binding
+operation.
+
 An extent local acquires (we say: _is bound to_) a value on entry to an
 extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
 
 If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown.
 If a client attempts to call `connectDatabase()` directly, without being invoked via `processRequest()`, `USER_CREDENTIALS` will not be bound to a value, and the attempt wil fail.
+
+Hopefully, it is clear that this extent local variable mechanism meets the requirements in the Motivation above. It is a one-way channel from caller all of its callees. The bound value is automatically removed when the caller terminates.
 
 ### Using extent local variables with threads
 
@@ -322,10 +329,6 @@ would also be able to use the extent local variable to get the
 needful. None of the methods in the extent can mutate the extent local
 variable so that it holds different credentials.
 
-One useful way to think of extent locals is as invisible, effectively
-final, parameters that are passed through every method invocation.
-These parameters will be accessible within the extent of a binding
-operation.
 
 ### Nested bindings
 
