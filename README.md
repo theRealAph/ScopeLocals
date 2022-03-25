@@ -136,7 +136,7 @@ example when used to return a hidden value from a method to some
 distant caller, far away in a deep call stack. This leads to code
 whose structure is hard to discern, let alone maintain. 
 
-While using a thread local variable to store context seems reasonable at first, it suffers from unconstrained mutability. Any callee with access to ThreadLocal.get() also can call set() or even remove(). This results in a kind of "action at a distance" where the relationship between a caller which sets the context is impossible to determine from the code alone. The problem is not distance as such, but the fact that the direction of communication is two way. 
+While using a thread local variable to store context seems reasonable at first, it suffers from unconstrained mutability. Any callee with access to ThreadLocal.get() also can call set() or even remove(). This results in a kind of "action at a distance" where the relationship between a caller which sets the context is impossible to determine from the code alone. The problem is not distance as such, but the fact that the direction of communication is two way. When a method sets a thread local variable, it doen't just change the situation for all its callees, but also for its callers. There is no way to tell from looking at the code which is intended.  
 
 It is far better, then, to have the structure (of what?) exposed in
 the code, so that it is possible to write maintainable
