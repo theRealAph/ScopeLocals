@@ -454,7 +454,7 @@ implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or both.
 And we'd still have the problem of memory management.
 
-It is better, therefore, not to do modify `ThreadLocal` but to give
+It is better, therefore, not to modify `ThreadLocal` but to give
 extent locals a separate identity from thread locals.
 
 ## New Stuff
