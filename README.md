@@ -165,6 +165,8 @@ the code, so that it is possible to write maintainable
 programs. Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
 
+### Inheritance versus mutability
+
 Unfortunately, thread locals present another problem, because thread locals may be inheritable.
 This feature, _inheritability_, is predicated on there being a
 relatively small set of threads sharing domain objects. When a new
