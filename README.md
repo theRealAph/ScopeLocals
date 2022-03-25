@@ -293,7 +293,8 @@ class ServerFramework {
 An extent local acquires (we say: _is bound to_) a value on entry to an
 extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
 
-If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown. 
+If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown.
+If a client attempts to call `connectDatabase()` directly, without being invoked via `processRequest()`, `USER_CREDENTIALS` will not be bound to a value, and the attempt wil fail.
 
 ### Using extent local variables with threads
 
