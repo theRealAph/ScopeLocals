@@ -165,6 +165,20 @@ the code, so that it is possible to write maintainable
 programs. Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
 
+Unfortunately, thread locals present another problem, because thread locals may be inheritable.
+This feature, _inheritability_, is predicated on there being a
+relatively small set of threads sharing domain objects. When a new
+`Thread` instance is created, its parent's set of inheritable
+thread-local variables is deeply copied. This is necessary because a
+thread's set of thread locals is, by design, mutable, so it cannot be
+shared between threads. Every child thread ends up carrying a local
+copy of its parent's entire set of `InheritableThreadLocal`s.
+
+For such uses we want sharing, but we do not want mutability. It
+should be possible for a child thread to share its parent's context,
+but it's not necessary for a child to mutate it. In contrast, thread
+local variables assume mutability.
+
 ### Virtual threads versus thread local variables
 
 The need for something like extent local variables arose in the
@@ -198,20 +212,7 @@ terminates. However, if you have a million threads and every one has
 its own inevitably mutable set of thread local variables, the memory
 footprint may become significant.
 
-Unfortunately, thread locals present another problem in the era of
-virtual threads, because thread locals may be inheritable.
-This feature, _inheritability_, is predicated on there being a
-relatively small set of threads sharing domain objects. When a new
-`Thread` instance is created, its parent's set of inheritable
-thread-local variables is deeply copied. This is necessary because a
-thread's set of thread locals is, by design, mutable, so it cannot be
-shared between threads. Every child thread ends up carrying a local
-copy of its parent's entire set of `InheritableThreadLocal`s.
-
-For such uses we want sharing, but we do not want mutability. It
-should be possible for a child thread to share its parent's context,
-but it's not necessary for a child to mutate it. In contrast, thread
-local variables assume mutability. While it makes sese for a parent to
+[ Stuff about virtual inheritance here. ]  While it makes sese for a parent to
 share context with a million children, it makes no sense at all for
 them to maintain mutable copies of that context.
 
