@@ -203,18 +203,10 @@ share some kind of security policy too.
 
 Because virtual threads are still threads, it is legitimate to for a
 virtual thread to carry thread-local variables. The short lifetime of
-virtual threads minimises the problem of long term memory leaks via thread locals. `remove()` isn't necessary when a thread, virtual or not,
-terminates, because when a thread terminates all thread local variables are removed. However, if you have a million threads and every one has
+virtual threads minimises the problem of long term memory leaks via thread locals. An explicit `remove()` isn't necessary when a thread, virtual or not,
+terminates, because when a thread terminates all thread local variables are automatically removed. However, if you have a million threads and every one has
 its own inevitably mutable set of thread local variables, the memory
 footprint may become significant.
-
-[ Stuff about virtual inheritance here. ]  While it makes sese for a parent to
-share context with a million children, it makes no sense at all for
-them to maintain mutable copies of that context.
-
-Context is a fine thing to be propagated from caller to callee, where
-it should be immutable, but is is a terrible thing when a caller's
-context is mutable by callees.
 
 It would be ideal if the Java Platform provided a way to have per
 thread context for millions of virtual threads that is immutable and,
