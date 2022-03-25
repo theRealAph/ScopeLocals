@@ -38,6 +38,8 @@ via its arguments. For example, a security-sensitive method in a
 library might need to check that a caller has appropriate permissions
 to perform an action.
 
+In other words, we have a caller and a callback, with third-party code in between. The initiator of the call chain needs a channel through which to pass some private data.
+
 [ It is reasonable to ask why all such information should not be
 passed explicitly as arguments. However, this can be very
 inconvenient. For example, it might be necessary to add logging to a
