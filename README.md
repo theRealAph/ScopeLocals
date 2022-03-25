@@ -149,17 +149,17 @@ the program has long since moved on from having any use for an object,
 it will not be garbage collected if no method has called
 `remove()`. 
 
-It would be better if the context associated with a thread were to be
-cleaned up automatically. Also, having to call `remove()` on a
-`ThreadLocal` to clean it up when it's no longer in use is somewhat
-antithetical to the way that Java usually works.
-
 In practice, thread locals are managed by the `Thread` itself.  Every
 thread must maintain a thread local map. This is an object that maps
 from `ThreadLocal` instances to each thread's copy of that
 thread-local variable. Just as a program associates data with a
 thread-local variable, the Java runtime associates a `ThreadLocal`
 instances with data via a thread local map.
+
+It would be better if the context associated with a thread were to be
+cleaned up automatically. Also, having to call `remove()` on a
+`ThreadLocal` to clean it up when it's no longer in use is somewhat
+antithetical to the way that Java usually works.
 
 ### Inheritance versus mutability
 
