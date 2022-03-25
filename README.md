@@ -248,8 +248,6 @@ The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
 that extent. The extent local is bound to the value.
 
-
-
 ### For example
 
 The following example uses an extent local variable to make
@@ -290,6 +288,11 @@ class ServerFramework {
 }
 ```
 
+An extent local acquires (we say: _is bound to_) a value on entry to an
+extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
+
+### Using extent local variables with threads
+
 A server framework may configure the behaviour of `run()` so that the
 user code will be run in a new virtual thread. This witnesses a
 thread-per-request model. Starting a new thread means that
@@ -304,9 +307,7 @@ The `ExtentLocal.get()` operation could be thought of as
 which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
-An extent local acquires (we say: _is bound to_) a value on entry to a
-extent; when that extent terminates, the previous value (or none) is
-restored. In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
+In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
 binding is the duration of the Lambda invoked by `run()`. In the
 example above, the extent unfolds from process request, through a
 lambda, to connectDatabase(). The frame for connectDatabase() is the
@@ -319,7 +320,7 @@ variable so that it holds different credentials.
 One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
-operation. [ Do we need that sentence? ]
+operation.
 
 ### Nested bindings
 
