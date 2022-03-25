@@ -348,13 +348,12 @@ It is sometimes useful to be able to re-bind an already-bound extent
 local. For example, a privileged method may need to connect to a
 database with a less-privileged set of credentials.
 
-Another use for non-string results is when formatting messages for
+Another use is when formatting messages for
 logging. Many logging calls are for debug information, and often debug
 logging is turned off. Many frameworks allow you to provide a
 Supplier<String> for log messages that is only invoked if the message
 is actually going to be logged, to avoid the overhead of formatting a
-string that is going to be thrown away. A lazy policy object could
-produce Supplier<String> rather than String itself.
+string that is going to be thrown away.
 
 ```
 class ServerFramework {
@@ -382,18 +381,8 @@ class ServerFramework {
 }
 ```
 
-
 This "shadowing" only extends until the end of the extent of the
 lambda above.
-
-(Note: This code example assumes that `USER_CREDENTIALS` is already bound
-to a highly privileged set of credentials.)
-
-(Note: Normally, user code run by the framework is not expected to
-return a result, the processRequest() method uses run(), which takes a
-`Runnable` and returns nothing. In contrast, the user code supplied to
-`log()` is expected to return a result. Therefore, the `log()` method
-uses call(), which takes a `Callable<String>` and returns a `String`.)
 
 ### In summary
 
@@ -408,7 +397,7 @@ Extent locals have the following properties:
   away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
-  field of a variable `final` does.
+  field of a variable `final` does. The one-way nature of the channel makes it much easier to reason about the flow of data in a program.
 
 ## Uses of extent locals
 
