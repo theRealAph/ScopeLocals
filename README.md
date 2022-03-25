@@ -288,6 +288,8 @@ class ServerFramework {
 }
 ```
 
+In this example, when the credentials are fetched inside connectDatabase(), the bottom of the extent is the `run()` call, and the top of the extent is the `connectDatabase()` call.
+
 ### Binding and unboud extent local variables
 
 One useful way to think of extent locals is as invisible, effectively
