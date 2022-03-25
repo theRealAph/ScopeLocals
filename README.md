@@ -38,7 +38,7 @@ via its arguments. For example, a security-sensitive method in a
 library might need to check that a caller has appropriate permissions
 to perform an action.
 
-In other words, we have a caller and a callback, with third-party code in between. The initiator of the call chain needs a channel through which to pass some private data.
+In other words, we have a caller and a callback, with third-party code in between. The initiator of the call chain needs a channel through which to pass some private data to the callback. In such cases, there is a notion of _context_ that is set at the original point of call.
 
 [ It is reasonable to ask why all such information should not be
 passed explicitly as arguments. However, this can be very
@@ -48,8 +48,7 @@ onerous. But it would not just be inconvenient. Having to explicitly
 add loggers everywhere would constrain the evolution of that library's
 API. ]
 
-In such cases, there is a notion of _context_ that is set by a
-higher-level caller.
+
 
 ### Not static fields!
 
