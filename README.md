@@ -177,10 +177,10 @@ should be possible for a child thread to share its parent's context,
 but it's not necessary for a child to mutate it. In contrast, thread
 local variables assume mutability.
 
-### Virtual threads versus thread local variables
+### The complications due to virtual threads
 
-The need for something like extent local variables arose in the
-context of Project Loom's virtual threads. These are cheap and
+The problems with thread local variables have become more pressing 
+context of Project Loom's virtual threads. These threads are cheap and
 plentiful, unlike today's platform threads which are expensive and
 scarce.
 
@@ -194,7 +194,7 @@ Virtual Threads are:
 
 * Short-running
 * Lightweight
-* Singular (?)
+* Single-use
 
 It would certainly be useful for these numerous cheap and plentiful
 threads to be able to access some context from their parent. For
@@ -203,10 +203,8 @@ share some kind of security policy too.
 
 Because virtual threads are still threads, it is legitimate to for a
 virtual thread to carry thread-local variables. The short lifetime of
-virtual threads means that the programming model of thread locals
-doesn't matter, because it doesn't matter when they die at a prodigous
-rate - `remove()` isn't necessary when a thread, virtual or not,
-terminates. However, if you have a million threads and every one has
+virtual threads minimises the problem of long term memory leaks via thread locals. `remove()` isn't necessary when a thread, virtual or not,
+terminates, because when a thread terminates all thread local variables are removed. However, if you have a million threads and every one has
 its own inevitably mutable set of thread local variables, the memory
 footprint may become significant.
 
