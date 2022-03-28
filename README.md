@@ -308,8 +308,12 @@ final, parameters that are passed through every method invocation.
 These parameters will be accessible within the extent of a binding
 operation.
 
-An extent local acquires (we say: _is bound to_) a value on entry to an
-extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
+An extent local variable is bound to a value at the start of a "scope"
+(i.e. the `run()` or `call()` method that binds it; more below) and
+its previous value (or none) is always restored at the end of that
+scope.
+
+ When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
 
 If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown.
 In the example above, if a client attempts to call `connectDatabase()` directly, without being invoked via `processRequest()`, `USER_CREDENTIALS` will not be bound to a value, and the attempt wil fail.
@@ -349,42 +353,51 @@ We said earlier than an extent local variable is bound to a
 value. Within the extent of that binding it is possible to _re-bind_
 the variable to a new value.
 
-[ Colour: different threads can bind the same variable with different
-values.  it should come as no surprise that when a variable is
-re-bound it takes on another value. As the thread unfolds, the extent
-local may be re-bound many times. a re-binding operation becomes the
-bottom-most frame of a new extent in which the extent local returns
-the new value. ]
+Different threads can bind the same extent local variable with
+different values.  it should come as no surprise that when an extent
+local variable is re-bound it takes on another value. As the thread
+unfolds, the extent local may be re-bound many times. a re-binding
+operation becomes the bottom-most frame of a new extent in which the
+extent local returns the new value.
 
-HERE: write all you know about nested bindings.
+A trivial example would be something like this:
 
-HERE: start with the theory, exemplify it, re-state the theory.
+```
+    void reBindingExample() {
+        ScopeLocal.where(DEPTH, 1).run(() -> {
+            System.out.print(DEPTH.get());
+            ScopeLocal.where(DEPTH, 2).run(() -> {
+                System.out.printl(DEPTH.get());
+            });
+            System.out.println(DEPTH.get());
+        });
+    }
+```
 
-Re-bindings 
+Which prints "1 2 1 ".
 
-As an example of re-binding, consider the examle from before.
+Among other things, this means that binding an extent local variable
+is naturally re-entrant, as well as being safe to use in miltiple
+threads. There is no need for code that binds an extent local variable
+to be concerned about overwriting an existing value: that cannot
+happen. A binding cannot "leak" out of the extent where it is
+bound. All that does happen is that a new value becomes accessible in
+the inner extent of the most recent binding.
 
-Point out: the user code has a log() method, etc.
-Need to narrate it more smoothly.
+As a more realistic example of re-binding, consider the
+`ServerFramework` example from before. The user code may call into the
+framework to log a message.
 
-The example above we show the user code physically within the server
-framework class. Therefore the notional user code can access the
-`USER_CREDENTIALS` and attempt to rebind it. However, in real life we
-couldn't. Even though the client might be able to re-bind
-`ServerFramework.USER_CREDENTIALS`, there should be no way to forge
-legitimate credentials, because the payload class doesn't allow
-unprivileged classes to create new credentials.
+Many logging calls are for debug information, and often debug logging
+is turned off. Many frameworks allow you to provide a
+`Supplier<String>` for log messages that is only invoked if the
+message is actually going to be logged, to avoid the overhead of
+formatting a string that is going to be thrown away.
 
-It is sometimes useful to be able to re-bind an already-bound extent
-local. For example, a privileged method may need to connect to a
-database with a less-privileged set of credentials.
-
-Another use is when formatting messages for logging. Many logging
-calls are for debug information, and often debug logging is turned
-off. Many frameworks allow you to provide a `Supplier<String>` for log
-messages that is only invoked if the message is actually going to be
-logged, to avoid the overhead of formatting a string that is going to
-be thrown away.
+However, we don't want arbitrary logging code to be able to, say,
+delete entries in the database. For that reason, we can execute
+logging with a lower set of credentials, perhaps those that only allow
+queries:
 
 ```
 public class ServerFramework {
@@ -418,14 +431,17 @@ public class ServerFramework {
     }
 ```
 
-This "shadowing" only extends until the end of the extent of the
-call to `supplier.get()` above.
+This re-binding only extends until the end of the extent of the call
+to `supplier.get()` above.
 
 (Note: This code example assumes that `USER_CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
 
-(Note: Normally, user code run by the framework is not expected to
-return a result, the processRequest() method uses run(), which takes a
+(Note: extent local variables my be bound by either `run()` or
+`call()`.  The main difference between them is that `call()` allows a
+value to be returned, whereas `run()` does not return anything.
+Normally, user code run by the framework is not expected to return a
+result, so the processRequest() method uses run(), which takes a
 `Runnable` and returns nothing. In contrast, the user code supplied to
 `log()` is expected to return a result. Therefore, the `log()` method
 uses call(), which takes a `Callable<String>` and returns a `String`.)
@@ -533,13 +549,47 @@ extent.
 
 ## Thread inheritance
 
-Like a thread-local variable, an extent-local variable can be 
-_inheritable_. This means that the state of the extent-local variable in 
-a parent thread is available to code running in child threads. The 
-immutability of state in an extent-local variable means that 
-inheritability in the child thread is fast and lightweight; this 
-comports with programs using cheap and plentiful virtual threads as the 
-child threads.
+Like a thread-local variable, an extent-local variable may be
+inherited. This means that the state of the extent-local variable in a
+parent thread is available to code running in child threads. The
+immutability of state in an extent-local variable means that
+inheritability in the child thread is fast and lightweight; this
+comports with programs using cheap and plentiful virtual threads as
+the child threads.
+
+In particular, threads forked by a `StructuredExecutor` automatically
+inherit the extent local variables of their parent thread.
+
+Here is an example of our `ServerFramework`, as before, but using a
+`StructuredExecutor` to fork a number of child threads. When the
+children start, they inherit all of the extent local variables bound
+in the parent at the time the `StructuredExecutor` was opened.
+
+```
+public class ServerFramework {
+    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
+
+    Connection connectDatabase() {
+        ... as before ...
+    }
+    
+   <T> void processMultipleRequests(List<Callable<T>> tasks) throws Exception {
+        var handler = findHandlerForCurrentRequest();
+        ScopeLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
+                .run(() -> {
+                    try (var s = StructuredExecutor.open()) {
+                        for (var t : tasks) {
+                            s.fork(t);
+                        }
+                        s.join();
+                    }
+                });
+    }
+```
+
+Any of the tasks forked by the `StructuredExecutor` may call
+`connectDatabase()`. These tasks may themselves fork, and again the
+credentials will be inherited by their children in turn.
 
 The extent local variables defined in the parent's extent (at the time
 the child threads are started) are also defined in the child.
