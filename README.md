@@ -38,6 +38,8 @@ via its arguments. For example, a security-sensitive method in a
 library might need to check that a caller has appropriate permissions
 to perform an action.
 
+In other words, we have a caller and a callback, with third-party code in between. The initiator of the call chain needs a channel through which to pass some private data to the callback. In such cases, there is a notion of _context_ that is set at the original point of call. This could even apply to the Java system itself, which starts a user's program by calling `main`. The Java program then calls back into the runtime to perform I/O. 
+
 [ It is reasonable to ask why all such information should not be
 passed explicitly as arguments. However, this can be very
 inconvenient. For example, it might be necessary to add logging to a
@@ -46,16 +48,13 @@ onerous. But it would not just be inconvenient. Having to explicitly
 add loggers everywhere would constrain the evolution of that library's
 API. ]
 
-In such cases, there is a notion of _context_ that is set by a
-higher-level caller.
-
 ### Not static fields!
 
 The Java language has never had a really good way to do this. Static
 fields might appear at first glance to be a solution. However, in a
 multi-threaded application, which includes the vast majority of server
 applications, it is useful to associate context with a thread, rather
-than globally. Static fields are global in nature, so won't
+than globally. Static fields are shared by all threads, so this won't
 work.
 
 ### Thread local variables
@@ -100,6 +99,8 @@ current thread to do the magic.)
 In other words, the Java runtime has long supported low-ceremony
 contextual per-thread information.
 
+### Thread local variables are not ideal for contexts
+
 Unfortunately, ThreadLocals have some disadvantages when used for the
 purpose of carrying contexts.
 
@@ -115,73 +116,6 @@ to a different value, or `remove()` is altogether. Frameworks can wrap
 `ThreadLocal`s to make sure they cannot be set inappropriately, but
 you're still carrying the cost of mutability.
 
-It is unfortunately common for developers to forget to remove a
-`ThreadLocal`, which can lead to a long-term memory leak. Even though
-the program has long since moved on from having any use for an object,
-it will not be garbage collected if no method has called
-`remove()`. 
-
-It would be better if the context associated with a thread were to be
-cleaned up automatically. Also, having to call `remove()` on a
-`ThreadLocal` to clean it up when it's no longer in use is somewhat
-antithetical to the way that Java usually works.
-
-In practice, thread locals are managed by the `Thread` itself.  Every
-thread must maintain a thread local map. This is an object that maps
-from `ThreadLocal` instances to each thread's copy of that
-thread-local variable. Just as a program associates data with a
-thread-local variable, the Java runtime associates a `ThreadLocal`
-instances with data via a thread local map.
-
-### Virtual threads versus thread local variables
-
-The need for something like extent local variables arose in the
-context of Project Loom's virtual threads. These are cheap and
-plentiful, unlike today's platform threads which are expensive and
-scarce.
-
-Platform Threads are:
-
-* Long-running
-* Heavyweight
-* Pooled
-
-Virtual Threads are:
-
-* Short-running
-* Lightweight
-* Singular (?)
-
-It would certainly be useful for these numerous cheap and plentiful
-threads to be able to access some context from their parent. For
-example, they may share a logger on an output stream. Perhaps they may
-share some kind of security policy too.
-
-Because virtual threads are still threads, it is legitimate to for a
-virtual thread to carry thread-local variables. The short lifetime of
-virtual threads means that the programming model of thread locals
-doesn't matter, because it doesn't matter when they die at a prodigous
-rate - `remove()` isn't necessary when a thread, virtual or not,
-terminates. However, if you have a million threads and every one has
-its own inevitably mutable set of thread local variables, the memory
-footprint may become significant.
-
-Unfortunately, thread locals present another problem in the era of
-virtual threads, because thread locals may be inheritable.
-This feature, _inheritability_, is predicated on there being a
-relatively small set of threads sharing domain objects. When a new
-`Thread` instance is created, its parent's set of inheritable
-thread-local variables is deeply copied. This is necessary because a
-thread's set of thread locals is, by design, mutable, so it cannot be
-shared between threads. Every child thread ends up carrying a local
-copy of its parent's entire set of `InheritableThreadLocal`s.
-
-For such uses we want sharing, but we do not want mutability. It
-should be possible for a child thread to share its parent's context,
-but it's not necessary for a child to mutate it. In contrast, thread
-local variables assume mutability. While it makes sese for a parent to
-share context with a million children, it makes no sense at all for
-them to maintain mutable copies of that context.
 
 ### The problem with unconstrained mutability
 
@@ -200,23 +134,79 @@ Thread local variables are prone to abuse. Fundamentally, programming
 with thread local variables can lead to spaghetti-like coding, for
 example when used to return a hidden value from a method to some
 distant caller, far away in a deep call stack. This leads to code
-whose structure is hard to discern, let alone maintain.
+whose structure is hard to discern, let alone maintain. 
 
-While using a thread local variable to store context seems reasonable
-at first, it suffers from unconstrained mutability. Any callee with
-access to `ThreadLocal.get()` also can call `set()` or even
-`remove()`. This results in a kind of "action at a distance" where the
-relationship between a caller which sets the context is impossible to
-determine from the code alone.
+While using a thread local variable to store context seems reasonable at first, it suffers from unconstrained mutability. Any callee with access to ThreadLocal.get() also can call set() or even remove(). This results in a kind of "action at a distance" where the relationship between a caller which sets the context is impossible to determine from the code alone. The problem is not distance as such, but the fact that the direction of communication is two way. When a method sets a thread local variable, it doen't just change the situation for all its callees, but also for its callers, and any other methods they call. There is no easy way to tell from looking at the code which is intended, or the extent of the effect when changes are pushed upwards.  
 
-It is far better, then, to have the structure (of what?) exposed in
-the code, so that it is possible to write maintainable
-programs. Maintainability is more important than programming
+Maintainability is more important than programming
 tricks. Reading a program is more important than writing it.
 
-Context is a fine thing to be propagated from caller to callee, where
-it should be immutable, but is is a terrible thing when a caller's
-context is mutable by callees.
+### Thread locals and manual cleanup
+
+It is unfortunately common for developers to forget to remove a
+`ThreadLocal`, which can lead to a long-term memory leak. Even though
+the program has long since moved on from having any use for an object,
+it will not be garbage collected if no method has called
+`remove()`. 
+
+In practice, thread locals are managed by the `Thread` itself.  Every
+thread must maintain a thread local map. This is an object that maps
+from `ThreadLocal` instances to each thread's copy of that
+thread-local variable. Just as a program associates data with a
+thread-local variable, the Java runtime associates a `ThreadLocal`
+instances with data via a thread local map.
+
+It would be better if the context associated with a thread were to be
+cleaned up automatically. Also, having to call `remove()` on a
+`ThreadLocal` to clean it up when it's no longer in use is somewhat
+antithetical to the way that Java usually works.
+
+### Inheritance versus mutability
+
+Unfortunately, thread locals present another problem, because thread locals may be inheritable.
+This feature, _inheritability_, is predicated on there being a
+relatively small set of threads sharing domain objects. When a new
+`Thread` instance is created, its parent's set of inheritable
+thread-local variables is deeply copied. This is necessary because a
+thread's set of thread locals is, by design, mutable, so it cannot be
+shared between threads. Every child thread ends up carrying a local
+copy of its parent's entire set of `InheritableThreadLocal`s.
+
+For such uses we want sharing, but we do not want mutability. It
+should be possible for a child thread to share its parent's context,
+but it's not necessary for a child to mutate it. In contrast, thread
+local variables assume mutability.
+
+### The complications due to virtual threads
+
+The problems with thread local variables have become more pressing 
+context of Project Loom's virtual threads. These threads are cheap and
+plentiful, unlike today's platform threads which are expensive and
+scarce.
+
+Platform Threads are:
+
+* Long-running
+* Heavyweight
+* Pooled
+
+Virtual Threads are:
+
+* Short-running
+* Lightweight
+* Single-use
+
+It would certainly be useful for these numerous cheap and plentiful
+threads to be able to access some context from their parent. For
+example, they may share a logger on an output stream. Perhaps they may
+share some kind of security policy too.
+
+Because virtual threads are still threads, it is legitimate to for a
+virtual thread to carry thread-local variables. The short lifetime of
+virtual threads minimises the problem of long term memory leaks via thread locals. An explicit `remove()` isn't necessary when a thread, virtual or not,
+terminates, because when a thread terminates all thread local variables are automatically removed. However, if you have a million threads and every one has
+its own inevitably mutable set of thread local variables, the memory
+footprint may become significant.
 
 It would be ideal if the Java Platform provided a way to have per
 thread context for millions of virtual threads that is immutable and,
@@ -258,8 +248,6 @@ The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
 that extent. The extent local is bound to the value.
 
-
-
 ### For example
 
 The following example uses an extent local variable to make
@@ -300,6 +288,25 @@ class ServerFramework {
 }
 ```
 
+In this example, when the credentials are fetched inside connectDatabase(), the bottom of the extent is the `run()` call, and the top of the extent is the `connectDatabase()` call.
+
+### Binding and unboud extent local variables
+
+One useful way to think of extent locals is as invisible, effectively
+final, parameters that are passed through every method invocation.
+These parameters will be accessible within the extent of a binding
+operation.
+
+An extent local acquires (we say: _is bound to_) a value on entry to an
+extent. When that extent terminates, the extent local is unbound. In the simple case this leaves the extent local unassociated with any value. In the case of a nested extent local binding (see below) it restores the previous binding.
+
+If an attempt is made to invoke `get()` on an extent local variable which is not boud, an exception will be thrown.
+In the example above, if a client attempts to call `connectDatabase()` directly, without being invoked via `processRequest()`, `USER_CREDENTIALS` will not be bound to a value, and the attempt wil fail.
+
+Hopefully, it is clear that this extent local variable mechanism meets the requirements in the Motivation above. It is a one-way channel from caller all of its callees. The bound value is automatically removed when the caller terminates.
+
+### Using extent local variables with threads
+
 A server framework may configure the behaviour of `run()` so that the
 user code will be run in a new virtual thread. This witnesses a
 thread-per-request model. Starting a new thread means that
@@ -314,9 +321,7 @@ The `ExtentLocal.get()` operation could be thought of as
 which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
-An extent local acquires (we say: _is bound to_) a value on entry to a
-extent; when that extent terminates, the previous value (or none) is
-restored. In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
+In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
 binding is the duration of the Lambda invoked by `run()`. In the
 example above, the extent unfolds from process request, through a
 lambda, to connectDatabase(). The frame for connectDatabase() is the
@@ -326,10 +331,6 @@ would also be able to use the extent local variable to get the
 needful. None of the methods in the extent can mutate the extent local
 variable so that it holds different credentials.
 
-One useful way to think of extent locals is as invisible, effectively
-final, parameters that are passed through every method invocation.
-These parameters will be accessible within the extent of a binding
-operation. [ Do we need that sentence? ]
 
 ### Nested bindings
 
@@ -367,13 +368,12 @@ It is sometimes useful to be able to re-bind an already-bound extent
 local. For example, a privileged method may need to connect to a
 database with a less-privileged set of credentials.
 
-Another use for non-string results is when formatting messages for
+Another use is when formatting messages for
 logging. Many logging calls are for debug information, and often debug
 logging is turned off. Many frameworks allow you to provide a
 Supplier<String> for log messages that is only invoked if the message
 is actually going to be logged, to avoid the overhead of formatting a
-string that is going to be thrown away. A lazy policy object could
-produce Supplier<String> rather than String itself.
+string that is going to be thrown away.
 
 ```
 class ServerFramework {
@@ -400,7 +400,6 @@ class ServerFramework {
     }
 }
 ```
-
 
 This "shadowing" only extends until the end of the extent of the
 lambda above.
@@ -445,7 +444,7 @@ Extent locals have the following properties:
   away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
-  field of a variable `final` does.
+  field of a variable `final` does. The one-way nature of the channel makes it much easier to reason about the flow of data in a program.
 
 ## Uses of extent locals
 
@@ -502,7 +501,7 @@ implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or both.
 And we'd still have the problem of memory management.
 
-It is better, therefore, not to do modify `ThreadLocal` but to give
+It is better, therefore, not to modify `ThreadLocal` but to give
 extent locals a separate identity from thread locals.
 
 ## New Stuff
