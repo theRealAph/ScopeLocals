@@ -337,6 +337,24 @@ We said earlier than an extent local variable is bound to a
 value. Within the extent of that binding it is possible to _re-bind_
 the variable to a new value.
 
+[ Colour: different threads can bind the same variable with different
+values.  it should come as no surprise that when a variable is
+re-bound it takes on another value. As the thread unfolds, the extent
+local may be re-bound many times. a re-binding operation becomes the
+bottom-most frame of a new extent in which the extent local returns
+the new value. ]
+
+HERE: write all you know about nested bindings.
+
+HERE: start with the theory, exemplify it, re-state the theory.
+
+Re-bindings 
+
+As an example of re-binding, consider the examle from before.
+
+Point out: the user code has a log() method, etc.
+Need to narrate it more smoothly.
+
 The example above we show the user code physically within the server
 framework class. Therefore the notional user code can access the
 `USER_CREDENTIALS` and attempt to rebind it. However, in real life we
@@ -395,6 +413,24 @@ return a result, the processRequest() method uses run(), which takes a
 `Runnable` and returns nothing. In contrast, the user code supplied to
 `log()` is expected to return a result. Therefore, the `log()` method
 uses call(), which takes a `Callable<String>` and returns a `String`.)
+
+### Migrating to extent local variables
+
+ADD THIS
+
+Narrative advice to someone who runs a stock exchange server that uses
+thread locals.
+
+Generally, the Gods of Java want you to migrate to extent locals.
+
+The first thing to do is determine whether this is appropriate.
+
+Youre looking forward to virt threads, so how do extent local
+variables help out with that. (Grand claims from the motivation
+revisited.)
+
+AN EXAMPLE FROM THE VIRTUAL THREADS / STRUCTURED CONCURRENCY JEP HERE
+that produces lots for virtual threads.
 
 ### In summary
 
