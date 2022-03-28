@@ -349,14 +349,14 @@ variable so that it holds different credentials.
 
 ### Nested bindings
 
-We said earlier than an extent local variable is bound to a
-value. Within the extent of that binding it is possible to _re-bind_
-the variable to a new value.
+We said earlier than an extent local variable is bound to a value.
+Within the extent of that binding it is possible to _re-bind_ the
+variable to a new value.
 
 Different threads can bind the same extent local variable with
-different values.  it should come as no surprise that when an extent
+different values.  It should come as no surprise that when an extent
 local variable is re-bound it takes on another value. As the thread
-unfolds, the extent local may be re-bound many times. a re-binding
+unfolds, the extent local may be re-bound many times. A re-binding
 operation becomes the bottom-most frame of a new extent in which the
 extent local returns the new value.
 
@@ -374,15 +374,15 @@ A trivial example would be something like this:
     }
 ```
 
-Which prints "1 2 1 ".
+Which prints "121 ".
 
-Among other things, this means that binding an extent local variable
-is naturally re-entrant, as well as being safe to use in miltiple
-threads. There is no need for code that binds an extent local variable
-to be concerned about overwriting an existing value: that cannot
-happen. A binding cannot "leak" out of the extent where it is
-bound. All that does happen is that a new value becomes accessible in
-the inner extent of the most recent binding.
+This means that binding an extent local variable is naturally
+re-entrant, as well as being safe to use in multiple threads. There is
+no need for code that binds an extent local variable to be concerned
+about overwriting an existing value because that cannot happen. A
+binding cannot "leak" out of the extent where it is bound. All that
+does happen is that a new value becomes accessible in the inner extent
+of the most recent binding.
 
 As a more realistic example of re-binding, consider the
 `ServerFramework` example from before. The user code may call into the
@@ -392,12 +392,10 @@ Many logging calls are for debug information, and often debug logging
 is turned off. Many frameworks allow you to provide a
 `Supplier<String>` for log messages that is only invoked if the
 message is actually going to be logged, to avoid the overhead of
-formatting a string that is going to be thrown away.
-
-However, we don't want arbitrary logging code to be able to, say,
-delete entries in the database. For that reason, we can execute
-logging with a lower set of credentials, perhaps those that only allow
-queries:
+formatting a string that is going to be thrown away. However, we don't
+want arbitrary logging code to be able to, say, delete entries in the
+database. For that reason, we can execute logging with a lower set of
+credentials, perhaps those that only allow queries:
 
 ```
 public class ServerFramework {
@@ -446,40 +444,65 @@ result, so the processRequest() method uses run(), which takes a
 `log()` is expected to return a result. Therefore, the `log()` method
 uses call(), which takes a `Callable<String>` and returns a `String`.)
 
-### Migrating to extent local variables
+## Migrating to extent local variables
 
-ADD THIS
+In general, for the reasons we've listed above, extent local variables
+are likely to be useful in many cases where thread local variables are
+used today. We continue to support thread local variables, even in
+Project Loom's new virtual threads, even though they're not ideal when
+threads are very numerous.
 
-Narrative advice to someone who runs a stock exchange server that uses
-thread locals.
+The first thing to do is determine whether migrating thread local to
+extent local variables is appropriate. If in your application thread
+local variables are used in an unstructured way so that a deep callee
+`set()`s a `ThreadLocal` which is then retrieved by the caller,
+migration may be difficult, and you may find thre is little to be
+gained.
 
-Generally, the Gods of Java want you to migrate to extent locals.
+However, in many cases extent local variables are exactly what you
+need. We've already covered hidden parameters for callbacks in some
+depth, but there are other good ways to use extent locals.
 
-The first thing to do is determine whether this is appropriate.
+### Extent locals and recursion
 
-Youre looking forward to virt threads, so how do extent local
+Sometimes you want to be able to detect recursion, perhaps because a
+framework isn't re-entrant or because you want to limit recursion in
+some way. An extent-local-local variable provides a way to do this:
+set it once, invoke a method, and somwhere deep in the call stack,
+test again to see if the thread-local variable is set. More
+elaborately, you might need the extent local variable to be a
+recursion counter.
+
+The detection of recursion is also useful in the case of flattened
+transactions: any transaction started when a transaction in progress
+becomes part of the outermost transaction.
+
+### Contexts of many kinds: the notion of a "current context".
+
+Java Concurrency in Practice talks about the use of a thread local
+variable to hold context:
+
+"... containers associate a transaction context with an executing
+thread for the duration of an EJB call. This is easily implemented
+using a static Thread-Local holding the transaction context: when
+framework code needs to determine what transaction is currently
+running, it fetches the transaction context from this ThreadLocal."
+
+Another example occurs in graphics, where there is a drawing context.
+Extent local variables, because of their automatic cleanup and
+re-entrancy, are better suited to this than are thread local
+variables.
+
+
+Generally, the Gods of Java want you to migrate to extent locals.]
+
+
+[ Youre looking forward to virt threads, so how do extent local
 variables help out with that. (Grand claims from the motivation
 revisited.)
 
 AN EXAMPLE FROM THE VIRTUAL THREADS / STRUCTURED CONCURRENCY JEP HERE
 that produces lots for virtual threads.
-
-### In summary
-
-Extent locals have the following properties:
-
-* _Locally-defined extent_: The values of `x` and `y` are only bound
-  in the extent of `run()`.
-* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
-  once bound, are effectively final.
-* _Simple and fast code_: In most cases an extent-local `x.get()` is as
-  fast as a local variable `x`. This is true regardless of how far
-  away `x.get()` is from the point that the extent local `x` is bound.
-* _Structure_: These properties also also make it easier for a reader
-  to reason about programs, in much the same way that declaring a
-  field of a variable `final` does. The one-way nature of the channel makes it much easier to reason about the flow of data in a program.
-
-## Uses of extent locals
 
 ## Where can extent local variables _not_ replace thread local variables?
 
@@ -491,35 +514,31 @@ shared between threads without synchronization. In this case, creating
 a thread local `DateFormat` object which persists for the lifetime of
 the thread might be exactly what you need:
 
-```
-public class Example2 {
-
-    private static ThreadLocal<DateFormat> SDF = new ThreadLocal<DateFormat>() {
-        protected DateFormat initialValue()
-        {
-            return new SimpleDateFormat("yyyy-MM-dd");
-        }
-    };
-
-    static void printToday() {
-        System.out.println(SDF.get().format(new Date()));
-    }
-
-    public static void main(String[] args) {
-        printToday();
-    }
-}
-```
-
 (In hindsight, making `DateFormat` mutable was a mistake, and we'd do
 better today, but it was Java 1.1 in 1997. `ThreadLocal` makes it
-possible to use this utility class in a multi-threaded program.)
+possible to use this utility class reasonably efficiently in a
+multi-threaded program.)
+
+## In summary
+
+Extent locals have the following properties:
+
+* _Locally-defined extent_: The values of extent local variables are only bound
+  in the extent of `run()` or `call()`.
+* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
+  once bound, are effectively final.
+* _Simple and fast code_: In most cases an extent-local `x.get()` is as
+  fast as a local variable `x`. This is true regardless of how far
+  away `x.get()` is from the point that the extent local `x` is bound.
+* _Structure_: These properties also also make it easier for a reader
+  to reason about programs, in much the same way that declaring a
+  field of a variable `final` does. The one-way nature of the channel makes it much easier to reason about the flow of data in a program.
 
 ## API
 
 There is more detail in the Javadoc for the API, at
 
-http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ExtentLocal.html
+http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ScopeLocal.html
 
 ## Alternatives
 
