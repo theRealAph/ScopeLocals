@@ -267,30 +267,41 @@ the caller itself did not pass them.
 cannot be instantiated by user code.)
 
 ```
-class ServerFramework {
-    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
+public class ServerFramework {
+    private static final ScopeLocal<Credentials> USER_CREDENTIALS = ScopeLocal.newInstance();
 
     void processRequest() {
-        ExtentLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
-                   .run(() -> { ...
-                                var connection = connectDatabase();
-                                ... });
+        var handler = findHandlerForCurrentRequest();
+        ScopeLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
+                   .run(() -> { handler.handleRequest(); });
     }
 
-    Connection connectDatabase() {
+    static Connection connectDatabase() {
         // Use the caller's credentials
         var creds = ServerFramework.USER_CREDENTIALS.get();
-        if (! creds.equals ...) {
+        if (! creds.isValid()) {
             throw new SecurityException("Invalid credentials");
         }
         return new Connection();
     }
+
+    ...
 }
+```
+
+... and in handler code that uses the framework, far, far away:
+
+```
+    public void handleRequest() {
+        /* ... */
+        var connection = serverFramework.connectDatabase();
+        /* ... */
+    }
 ```
 
 In this example, when the credentials are fetched inside connectDatabase(), the bottom of the extent is the `run()` call, and the top of the extent is the `connectDatabase()` call.
 
-### Binding and unboud extent local variables
+### Binding and unbound extent local variables
 
 One useful way to think of extent locals is as invisible, effectively
 final, parameters that are passed through every method invocation.
@@ -368,23 +379,19 @@ It is sometimes useful to be able to re-bind an already-bound extent
 local. For example, a privileged method may need to connect to a
 database with a less-privileged set of credentials.
 
-Another use is when formatting messages for
-logging. Many logging calls are for debug information, and often debug
-logging is turned off. Many frameworks allow you to provide a
-Supplier<String> for log messages that is only invoked if the message
-is actually going to be logged, to avoid the overhead of formatting a
-string that is going to be thrown away.
+Another use is when formatting messages for logging. Many logging
+calls are for debug information, and often debug logging is turned
+off. Many frameworks allow you to provide a `Supplier<String>` for log
+messages that is only invoked if the message is actually going to be
+logged, to avoid the overhead of formatting a string that is going to
+be thrown away.
 
 ```
-class ServerFramework {
+public class ServerFramework {
     private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
 
     void processRequest() {
-        ExtentLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
-                   .run(() -> { ...
-                                var connection = connectDatabase();
-                                log(() -> "Hello, World!");
-                                ... });
+        ... as before ...
     }
 
     Connection connectDatabase() {
@@ -400,9 +407,19 @@ class ServerFramework {
     }
 }
 ```
+... and in handler code that uses the framework, far, far away:
+
+```
+    public void handleRequest() {
+        /* ... */
+        var connection = serverFramework.connectDatabase();
+        serverFramework.log(() -> "Hello, World!");
+        /* ... */
+    }
+```
 
 This "shadowing" only extends until the end of the extent of the
-lambda above.
+call to `supplier.get()` above.
 
 (Note: This code example assumes that `USER_CREDENTIALS` is already bound
 to a highly privileged set of credentials.)
