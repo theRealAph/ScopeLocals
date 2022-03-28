@@ -336,15 +336,61 @@ The `ExtentLocal.get()` operation could be thought of as
 which clearly shows that a `ExtentLocal` instance is a key used
 to look up the current thread's incarnation of an extent local.
 
-In this case, the extent of `ServerFramework.USER_CREDENTIALS`'s
-binding is the duration of the Lambda invoked by `run()`. In the
-example above, the extent unfolds from process request, through a
-lambda, to connectDatabase(). The frame for connectDatabase() is the
-topmost frame; the frame for processRequest() is the bottom most
-frame. If connectDatbase() called more methods, then those methods
-would also be able to use the extent local variable to get the
-needful. None of the methods in the extent can mutate the extent local
-variable so that it holds different credentials.
+Like a thread-local variable, an extent-local variable may be
+inherited. This means that the state of the extent-local variable in a
+parent thread is available to code running in child threads. The
+immutability of state in an extent-local variable means that
+inheritability in the child thread is fast and lightweight; this
+comports with programs using cheap and plentiful virtual threads as
+the child threads.
+
+In particular, threads forked by a `StructuredExecutor` automatically
+inherit the extent local variables of their parent thread.
+
+Here is an example of our `ServerFramework`, as before, but using a
+`StructuredExecutor` to fork a number of child threads. When the
+children start, they inherit all of the extent local variables bound
+in the parent at the time the `StructuredExecutor` was opened.
+
+```
+public class ServerFramework {
+    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
+
+    Connection connectDatabase() {
+        ... as before ...
+    }
+    
+   <T> void processMultipleRequests(List<Callable<T>> tasks) throws Exception {
+        var handler = findHandlerForCurrentRequest();
+        ScopeLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
+                .run(() -> {
+                    try (var s = StructuredExecutor.open()) {
+                        for (var t : tasks) {
+                            s.fork(t);
+                        }
+                        s.join();
+                    }
+                });
+    }
+```
+
+Any of the tasks forked by the `StructuredExecutor` may call
+`connectDatabase()`. These tasks may themselves fork, and again the
+credentials will be inherited by their children in turn.
+
+The extent local variables defined in the parent's extent (at the time
+the child threads are started) are also defined in the child.
+
+A newly created thread has read-only access the extent local variables
+defined in it parent.
+
+A child virtual thread can inherit its parent's set of extent local
+variables, but as long as the inherited variables are read only,
+sharing is fine.
+
+With a million vitual threads, it would seem like there are an awful
+lot of maps. But immutable maps can be shared! This is not true of
+thread locals, which are mutable, so cannot.
 
 
 ### Nested bindings
@@ -374,7 +420,7 @@ A trivial example would be something like this:
     }
 ```
 
-Which prints "121 ".
+Which prints "121".
 
 This means that binding an extent local variable is naturally
 re-entrant, as well as being safe to use in multiple threads. There is
@@ -565,64 +611,6 @@ Clearly, extent local variables are a constrained version of thread
 locals. Once set, a thread local variable is defined for the entie
 lifetime of its thread. an extent local variable is defined for its
 extent.
-
-## Thread inheritance
-
-Like a thread-local variable, an extent-local variable may be
-inherited. This means that the state of the extent-local variable in a
-parent thread is available to code running in child threads. The
-immutability of state in an extent-local variable means that
-inheritability in the child thread is fast and lightweight; this
-comports with programs using cheap and plentiful virtual threads as
-the child threads.
-
-In particular, threads forked by a `StructuredExecutor` automatically
-inherit the extent local variables of their parent thread.
-
-Here is an example of our `ServerFramework`, as before, but using a
-`StructuredExecutor` to fork a number of child threads. When the
-children start, they inherit all of the extent local variables bound
-in the parent at the time the `StructuredExecutor` was opened.
-
-```
-public class ServerFramework {
-    private static final ExtentLocal<Credentials> USER_CREDENTIALS = ExtentLocal.newInstance();
-
-    Connection connectDatabase() {
-        ... as before ...
-    }
-    
-   <T> void processMultipleRequests(List<Callable<T>> tasks) throws Exception {
-        var handler = findHandlerForCurrentRequest();
-        ScopeLocal.where(ServerFramework.USER_CREDENTIALS, Credentials.DEFAULT)
-                .run(() -> {
-                    try (var s = StructuredExecutor.open()) {
-                        for (var t : tasks) {
-                            s.fork(t);
-                        }
-                        s.join();
-                    }
-                });
-    }
-```
-
-Any of the tasks forked by the `StructuredExecutor` may call
-`connectDatabase()`. These tasks may themselves fork, and again the
-credentials will be inherited by their children in turn.
-
-The extent local variables defined in the parent's extent (at the time
-the child threads are started) are also defined in the child.
-
-A newly created thread has read-only access the extent local variables
-defined in it parent.
-
-A child virtual thread can inherit its parent's set of extent local
-variables, but as long as the inherited variables are read only,
-sharing is fine.
-
-With a million vitual threads, it would seem like there are an awful
-lot of maps. But immutable maps can be shared! This is not true of
-thread locals, which are mutable, so cannot.
 
 ** Thread local properties
 
