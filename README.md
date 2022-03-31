@@ -9,7 +9,20 @@ to replace `ThreadLocal`s for sharing information with a very large
 number of threads. This usage especially applies to Project Loom's
 virtual threads.
 
+Extent-local variables allow a method to make data specific to the current thread
+available the methods it calls without having to pass that data explicitly via call
+arguments. This includes both nested calls and, optionally, calls executed in
+child threads.
+
+Extent local variables are immutable in the sense that a called method can only
+read the value set by its caller. However, the extent local can be *rebound* within
+a called method i.e. it can pass on a different value to the methods it calls.
+
 ## Goals
+
+- *Ease of use* — Providing a clear lifetime and model for sharing of thread-specific data should simplify reasoning about data flow, consumption and modification.
+- *Reliability* — In particular, resources shared via extent locals should be easier to allocate and deallocate safely.  
+- *Performance* — The immutability of extent-local variables should allow values to be passed to large numbers of child threads without the expense of copying.  
 
 ## Non-Goals
 
@@ -25,7 +38,523 @@ of thread local variables. While we expect extent locals to be a better
 fit in many or most cases, thread-local variables may still be useful
 in some contexts,
 
-## Motivation
+## Motivation  (Transactions Version)
+
+Programs are usually built out of components that contribute independent,
+complementary functionality. For example a networked service may combine
+business logic that decides how to respond to an incoming request with a database
+driver that provides data persistence and a transaction manager that provides
+coherent, atomic updates.
+
+Context such as the current transaction, which belongs to a specific thread, would
+normally be communicated to the server components via method arguments. However,
+in cases like this where the data needs to be pushed through calls made to the
+business logic code it simplifies the implementation if the server can share the
+state with the components via some alternative channel. This is already
+possible using existing JDK runtime APIs but the existing options present
+problems that class `ExtentLocal` is intended to avoid.
+
+### Current Alternative to ExtentLocals (Transactions Version)
+
+As an example of where this need arises, consider a transaction implementation
+which uses a `ThreadLocal` field to associate an active transaction with a thread;
+                     
+    class TransactionManager {
+      private final static ThreadLocal<TransactionImpl> currentTx = ...;
+      ...
+
+Static field `currentTx` provides a way to ensure that each thread handling
+a request can have its own independent transaction. The `ThreadLocal`
+instance referenced from this field serves as a key that is used to look up
+a `TransactionImpl` value for the current thread. So, despite `currentTx` being
+declared static in class `TransactionManager`, there is _not_ exactly one incarnation
+of the field shared across all instances of Foo; instead, there are
+_multiple_ incarnations of the field, one per thread, and the
+incarnation of `currentTx` that is used when code performs a field access
+(`currentTx.get()`) depends on the thread which is executing the code.
+
+Using a `ThreadLocal` avoids the need to pass a `TransactionImpl` object as an argument
+to calls from the service handler through the business logic code and database driver back
+into the transaction manager code.
+
+Before executing any business logic the service dispatcher starts a new transaction 
+
+    TransactionManager.begin();
+
+Under this call the `TransactionManager` sets the thread local, associating
+a newly created transaction with the thread. Of course, it is an error to try to
+begin a new transaction when one is already active:
+
+    if (currentTx.get() == null) {
+      TransactionImpl txImpl = ...;
+      currentTx.set(txImpl);
+    } else {
+      throw ...
+ 
+The database driver can subsequently enlist a database connection with the transaction
+without needing a reference to the current `TransactionImpl`:
+
+    try {
+      XAResource dbResource = connect(...);
+      TransactionManager.enlist(dbResource);
+      ...
+
+Similarly, the business logic can commit or rollback the current transaction without
+needing such a reference:
+
+    try {
+      ...
+      TransactionManager.commit();
+    } catch (Exception e) {
+       TransactionManager.rollback();
+    }
+
+Inside the call to `enlist` the current transaction can be retrieved
+from the `ThreadLocal`:
+
+      TransactionImpl txImpl = currentTx.get();
+      if (tx != null)
+        tx.enlist(resource);
+      else
+        throw ...
+
+Likewise in `commit` and `rollback` the transaction can be terminated and cleared
+
+      TransactionImpl txImpl = currentTx.get();
+      if (tx != null)
+        tx.commit(resource);
+        tx.set(null);
+      else
+        throw ...
+
+
+Although this example shows that `ThreadLocal`s can be used to implement
+the behaviour needed for this case there are problems with their design
+that affect even in this sort of well structured use. The problem is that
+`ThreadLocal` offer more flexibility than is needed for many application's
+needs and come with some significant costs:
+
+- they do not have a well-defined lifecycle
+- they are mutable
+- they incur a relatively high per thread storage cost
+
+### Unconstrained Mutability (Transactions Version)
+
+Every thread-local variable is _mutable_: that is to say,
+everyone who can access a `ThreadLocal`'s `get()` can also `set()` it
+to a different value, or `remove()` is altogether. Frameworks can wrap
+`ThreadLocal`s to make sure they cannot be set inappropriately, but
+they still carry the cost of mutability.
+
+Mutability by default is a bad decision.
+
+[ TLs being mutable fies in the face of the repeated advice in
+_Effective Java_ to minimize mutability.
+
+_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
+try-with-resources and try...finally. Item 17: minimize mutability:
+don't provide methods that modify the object's state. Yet
+`ThreadLocal` depends on these things we're advised to minimize and
+avoid. ]
+
+Unconstrained mutability is prone to abuse. Badly designed code can make
+it very difficult to identify where and in what order state will be
+read and updated. This is possible even with a well-defined API like the
+`TransactionManager` example described above. A transaction could be started
+anywhere under the service handler thread, which is why the begin implementation
+checks no transaction is already active. Likewise, the business logic might
+locate calls to commit or rollback on different execution paths but incorrect
+logic could run the risk of trying to commit an already rolled back transaction,
+or worse fail either to commit or rollback.
+
+In the worst case, programming with thread local variables can lead to
+spaghetti-like coding, for example when used to return a hidden value from a
+method to some distant caller, far away in a deep call stack. This leads to code
+whose structure is hard to discern, let alone maintain.
+
+## Motivation  (ServerFramework Version)
+
+Programs are usually built out of components that contribute independent,
+complementary functionality. For example a networked server may combine
+business logic to handle service requests with components such as a database
+driver that provides data persistence, a logging framework that records
+progress or noteworthy events, and so on. As a security measure each request
+might be provided with a `Permissions` token which controls access to the
+operations provided by these server components.
+
+Context such as the permissions token, which belongs to a specific thread, would
+normally be communicated to the server components via method arguments. However,
+in cases like this where the data needs to be pushed through calls made to the
+business logic code it simplifies the implementation if the server can share the
+state with the components via some alternative channel. This is already
+possible using existing JDK runtime APIs but the existing options present
+problems that class `ExtentLocal` is intended to avoid.
+
+### Current Alternative to ExtentLocals (ServerFramework Version)
+
+Class `ThreadLocal` provides an example of how this might currently be
+implemented:
+
+    class ServerFramework {
+      final static ThreadLocal<PermissionsImpl> PERMISSIONS = ...;
+      ...
+
+Static field `PERMISSIONS` provides a way to ensure that each thread handling
+a request can have its own independent set of permissions. The `ThreadLocal`
+instance referenced from this field serves as a key that is used to look up
+a `PermissionImpl` value for the current thread. So, despite `PERMISSIONS` being
+declared static in class `ServerFramework`, there is _not_ exactly one incarnation
+of the field shared across all instances of Foo; instead, there are
+_multiple_ incarnations of the field, one per thread, and the
+incarnation of `PERMISSIONS` that is used when code performs a field access
+(`PERMISSIONS.get()`) depends on the thread which is executing the code.
+
+Using a `ThreadLocal` avoids the need to pass a `PermissionsImpl` object as
+an argument to calls from the service handler through the business logic code
+and into the database driver or logger code. The server framework can set
+the permissions before executing business logic and the components can retrieve
+it to check that an operation is allowed.
+
+So, before executing any business logic the service dispatcher would install
+the required permissions:
+         
+    class ServerFramework {
+      ...
+    void processRequest(Request request) {
+      if (request.justBrowsing()) {
+        PERMISSIONS.set(new PermissionsImpl(LOG));
+      } else if (request.isPurchase()) {
+        PERMISSIONS.set(new PermissionsImpl(LOG|DATABASE));
+      } else ...
+      AppLogic.handleRequest(request)
+
+The server components can use the `ThreadLocal` to test the current thread's
+permission before performing an operation on behalf of the business
+logic, such as, say, opening a database connection or logging a warning:
+      
+    class DBDriver {
+      DBConnection open(...) throws InvalidAccessException {
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (permissions.allowed(DATABASE) {
+          ...
+        } else {
+          throw new  InvalidAccessException(...)
+      ...
+
+    class Logger {
+      static int LOG_LEVEL = ...;
+      ...
+      void warn(String message) {
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (!permissions.allowed(LOG) {
+          throw new  InvalidAccessException(...)
+        }
+        if (LOG_LEVEL >= WARNING) {
+             write(logFile, message);
+             ...
+        }
+
+In special cases a component may want to restrict permissions before
+performing an operation. One example might be where the business logic
+chooses to pass the warning message using a `Supplier<String>` instead
+of a `String`:
+               
+      Logger.warn(() -> "Warning : %s you have been warned".format(request.getName());
+
+This variant of method warn `Supplier` avoids the cost of executing the
+format call in the case where the logger level is set to exclude printing
+of warning messages. The logger will only invoke the supplier code if
+needed. Unfortunately, this also means the logger code has to call
+back to arbitrary code supplied by the business log. It might prefer to
+rest the permissions for the duration of this call:
+
+    class Logger {
+      ...
+      void warn(Supplier<String> supplier) {
+        Permissions permissions = ServerFrameworkPERMISSIONS.get();
+        if (!permissions.allowed(LOG) {
+          throw new  InvalidAccessException(...)
+        }
+        if (LOG_LEVEL >= WARNING) {
+           String message;
+           Permissions reduced = permissions.restrictTo(LOG);
+           try {
+              ServerFrameworkPERMISSIONS.set(reduced);
+              message = supplier.get();
+           } finally {
+              ServerFrameworkPERMISSIONS.set(permissions)
+           }
+           write(logFile, message);
+           ...
+
+Although this example shows that `ThreadLocal`s can be used to implement
+the behaviour needed for this case there are problems with their design
+that affect even in this sort of well structured use. The problem is that
+`ThreadLocal` offer more flexibility than is needed for many application's
+needs and come with some significant costs:
+
+- they are mutable
+- they do not have a well-defined lifecycle
+- they incur a relatively high per thread storage cost
+
+### Unconstrained Mutability  (ServerFramework Version)
+
+Every thread-local variable is _mutable_: that is to say,
+everyone who can access a `ThreadLocal`'s `get()` can also `set()` it
+to a different value, or `remove()` it altogether. Frameworks can wrap
+`ThreadLocal`s to make sure they cannot be set inappropriately, but
+they still carry the cost of mutability.
+
+Mutability by default is a bad decision.
+
+[ TLs being mutable fies in the face of the repeated advice in
+_Effective Java_ to minimize mutability.
+
+_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
+try-with-resources and try...finally. Item 17: minimize mutability:
+don't provide methods that modify the object's state. Yet
+`ThreadLocal` depends on these things we're advised to minimize and
+avoid. ]
+
+Unconstrained mutability is prone to abuse. Badly designed or buggy code
+can make it very difficult to identify where and in what order state will be
+read and updated. This is possible even with a well-defined API like the
+`ServerFramework` example described above.  Calls to `ThreadLocal.set()` do
+not just have a local effect. If a call to one of the Logger methods reset
+the permissions but failed to restore them, because, say, of incorrect
+exception handling, then the error might only manifest in a call
+to the database driver performing some completely unrelated aspect of the
+business logic.
+
+In the worst case, programming with thread local variables can lead to
+spaghetti-like coding, for example when used to return a hidden value from a
+method to some distant caller, far away in a deep call stack. This leads to code
+whose structure is hard to discern, let alone maintain.
+         
+### ThreadLocal Persistence (ServerFramework Version)
+
+A secondary problem with `ThreadLocal`s relates to persistence of the
+ThreadLocal state throughout the lifetime of the thread or of any child
+threads that it creates. This is not a problem of behaviour but one of
+implementation cost.
+
+Once set, a ThreadLocal is _persistent_: that is to say, it is retained
+for the lifetime of the thread, or until a method running on that thread
+calls `remove()`. It is unfortunately common for developers to forget 
+remove a `ThreadLocal`, or even just to reset it to `null`, which can
+lead to a long-term memory leak. In the worst cases there may be no
+clear point at which it is safe to call `remove()`. Even though the
+program may have long since moved on from having any use for an object
+referenced from the `ThreadLocal`, it will not be garbage collected
+unless the thread exits.
+
+Having to call `remove()` on a `ThreadLocal` to clean it up when it's no
+longer in use is somewhat antithetical to the way that Java usually works.
+It would be better if the context associated with a thread were to be
+cleaned up automatically.
+
+### ThreadLocal Inheritance  (ServerFramework Version)
+
+This problem with `ThreadLocal` persistence can be much worse when
+using multiple threads because`ThreadLocal`s may be inherited from
+parent to child thread. A `ThreadLocal` works by storing a reference
+to itself and to the value for the current Java `Thread` value in storage
+allocated by the `Thread`. Every newly created child `Thread` has to
+allocate storage for all its inherited `ThreadLocal` instances. It cannot
+share the storage used by the parent thread because of mutability. Both
+parent and child need to be able to change their own value without the
+change being seen by any other thread.
+
+In the ServerFramework example it would be natural to run each service
+request in a different thread:
+
+    class ServerFramework {
+      ...
+    void processRequest(Request request) {
+      new Thread().run( () -> {
+          if (request.justBrowsing()) {
+            PERMISSIONS.set(new PermissionsImpl(LOG));
+          } else if (request.isPurchase()) {
+            PERMISSIONS.set(new PermissionsImpl(LOG|DATABASE));
+          } else ...
+          AppLogic.handleRequest(request)
+        });
+    }
+
+This requires the `ThreadLocal` used in static field `PERMISSIONS` to
+be inherited by each child thread, incurring a per-thread cost. Most
+of the time the child thread could get by with sharing rather than
+copying the parent thread's version of the permissions. They only
+ever need to be updated temporarily when a server component wants to
+reduce permissions. In other examples inheritability of a `ThraadLocal`
+may never also require mutability.
+
+### The complications due to virtual threads
+
+The above problems with thread local variables have become more pressing
+context of Project Loom's virtual threads. These threads are cheap and
+plentiful, unlike today's platform threads which are expensive and
+scarce.
+
+Platform Threads are:
+
+* Long-running
+* Heavyweight
+* Pooled
+
+Virtual Threads are:
+
+* Short-running
+* Lightweight
+* Single-use
+
+It would certainly be useful for these numerous cheap and plentiful
+threads to be able to access some context from their parent. For
+example, they may share a logger on an output stream. Perhaps they may
+share some kind of security policy too.
+
+Because virtual threads are still threads, it is legitimate to for a
+virtual thread to carry thread-local variables. The short lifetime of
+virtual threads minimises the problem of long term memory leaks via
+thread locals. An explicit `remove()` isn't necessary when a thread,
+virtual or not, terminates, because when a thread terminates all thread
+local variables are automatically removed. However, if you have a
+million threads and every one has its own inevitably mutable set of
+thread local variables, the memory footprint may become significant.
+
+It would be ideal if the Java Platform provided a way to have per
+thread context for millions of virtual threads that is immutable and,
+given the low cost of forking virtual threads, inheritable. Because
+these ideal per thread variables are immutable, their data can be
+easily shared by child threads, rather than copied to child
+threads. Thread local variables were the 90s realization of per thread
+variables; we need a better realization of per thread vairables for
+the modern era.
+
+## Description
+
+An extent local variable is a per thread variable that allows context
+to be set in a caller and read by callees. Unlike a thread local
+variable, an extent local variable is immutable: there is no `set()`
+method. Context can be anything from a business object to an instance
+of a system-wide logger.
+
+The term extent local derives from the idea of an extent in the Java
+Virtual Machine. The JVM specification describes an extent as follows:
+
+"It is often useful to describe the situation where, in a given
+thread, a given method m1 invokes a method m2, which invokes a method
+m3, and so on until the method invocation chain includes the current
+method mn. None of m1..mn have yet completed; all of their frames are
+still stored on the Java Virtual Machine stack (2.5.2). Collectively,
+their frames are called an _extent_. The frame for the current method
+mn is called the _top most frame_ of the extent. The frame for the
+given method m1 is called the _bottom most frame_ of the extent."
+
+(That is to say, m1's extent is the set of methods m1 invokes, and any
+methods invoked transitively by them.)
+
+The value associated with an extent local variable is defined in the
+bottom most frame of some extent, and is accessible in every frame of
+that extent. The extent local is bound to the value.
+                                   
+###  Example use Of ExtentLocal (ServerFramework)
+
+The `ServerFramework` example described above can easily be rewritten to
+use class `ExtentLocal` instead of `ThreadLocal`. The `ServerFramework` will
+still use a static field to make the permissions available:
+
+     class ServerFramework {
+      final static ExtentLocal<PermissionsImpl> PERMISSIONS = ...;
+      ...
+
+This ensures that field `Permissions` references an `ExtentLocal` instance
+but the `ExtentLocal` does not identify any values associated with running
+threads. An attempt at this stage  to retrieve a value by calling
+`PERMISSIONS.get()` will fail with an exception.
+
+Before executing the business logic the service dispatcher needs to
+set up the required permissions in the current thread:
+
+    class ServerFramework {
+      ...
+
+    void processRequest(Request request) {
+      PermissionsImpl permissions;
+      if (request.justBrowsing()) {
+        permissions = new PermissionsImpl(LOG));
+      } else if (request.isPurchase()) {
+        permissions = new PermissionsImpl(LOG|DATABASE));
+      } else ...
+      ExtentLocal.where(PERMISSIONS, permissions)
+                   .run(() -> { AppLogic.handleRequest(request); });
+      ...
+
+The `where` clause in the above code *binds* `the ExtentLocal` referenced
+from `PERMISSIONS`. What that means is that a `get()` executed in code
+called below the `run()` clause will retrieve a value specific to this
+thread. The binding is only visible to code called below `run()`. If 
+the extent local is bound in a different thread then calls to `get()`
+below the run clause in that thread will retrieve the value passed in the
+`where() clause.
+
+Server components can use the `ExtentLocal` to retrieve the current thread's
+permission just as they did with the `ThreadLocal`. 
+
+    class DBDriver {
+      DBConnection open(...) throws InvalidAccessException {
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (permissions.allowed(DATABASE) {
+          ...
+        } else {
+          throw new  InvalidAccessException(...)
+      ...
+
+However, notice that calls to `open()`, `log()` etc will only be able
+to retrieve the permissions when they occur in a method below the call
+to `run()'.
+
+###  Rebinding of ExtentLocal (ServerFramework)
+
+In the original version of `ServerFramework` the logger needed to
+temporarily reduce the permissions associated with the current thread
+for the extent of a callback to a `StringSupplier`. This was implemented
+by overwriting and then restoring the original value of the `ThreadLocal`.
+`ExtentLocal` does not allow a called method to update the value set
+by its caller. However, it does allow a called method to pass on a
+different value to its callers.
+
+    class Logger {
+      ...
+      void warn(Supplier<String> supplier) {
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (!permissions.allowed(LOG) {
+          throw new  InvalidAccessException(...)
+        }
+        if (LOG_LEVEL >= WARNING) {
+           Permissions reduced = permissions.restrictTo(LOG);
+           String message =
+              ExtentLocal.where(PERMISSIONS, reduced)
+                           .call(() -> { supplier.get(); }); 
+           write(logFile, message);
+           ...
+
+In this case `call()` is used instead of `run()` because the executed
+code needs to return a value. The `where` clause ensures that any
+method in the extent below `call()` which tries to `get()` the value
+for `PERMISSIONS` will see the reduced PermissionsImpl rather than the
+one set by the service request handler. Passing on a different value
+to code executing in a nested extent as shown in the above example is
+referred to as *rebinding* the `ExtentLocal`.
+
+### Using extent local variables with threads
+
+A server framework may configure the behaviour of `run()` so that the
+user code will be run in a new virtual thread.
+              
+-- Modify example to use StructuredExecutor--  
+
+---------------------------------- Saved original text from Motivation ---------------------
 
 In Java programs, a method may receive its input from several
 sources. The primary source is the method's arguments, but there are
