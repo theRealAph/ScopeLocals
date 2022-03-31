@@ -379,9 +379,9 @@ However, notice that calls to `open()`, `log()`, etc will only be able
 to retrieve the permissions when they occur in the extent of the call
 to `run()`.
 
-###  Rebinding of ExtentLocal (ServerFramework)
+###  Rebinding of ExtentLocal
 
-In the original version of `ServerFramework` the logger needed to
+In the `ThreadLocal` version of `ServerFramework` the logger needed to
 temporarily reduce the permissions associated with the current thread
 for the extent of a callback to a `StringSupplier`. This was implemented
 by overwriting and then restoring the original value of the `ThreadLocal`.
