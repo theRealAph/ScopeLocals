@@ -38,141 +38,7 @@ of thread local variables. While we expect extent locals to be a better
 fit in many or most cases, thread-local variables may still be useful
 in some contexts,
 
-## Motivation  (Transactions Version)
-
-Programs are usually built out of components that contribute independent,
-complementary functionality. For example a networked service may combine
-business logic that decides how to respond to an incoming request with a database
-driver that provides data persistence and a transaction manager that provides
-coherent, atomic updates.
-
-Context such as the current transaction, which belongs to a specific thread, would
-normally be communicated to the server components via method arguments. However,
-in cases like this where the data needs to be pushed through calls made to the
-business logic code it simplifies the implementation if the server can share the
-state with the components via some alternative channel. This is already
-possible using existing JDK runtime APIs but the existing options present
-problems that class `ExtentLocal` is intended to avoid.
-
-### Current Alternative to ExtentLocals (Transactions Version)
-
-As an example of where this need arises, consider a transaction implementation
-which uses a `ThreadLocal` field to associate an active transaction with a thread;
-                     
-    class TransactionManager {
-      private final static ThreadLocal<TransactionImpl> currentTx = ...;
-      ...
-
-Static field `currentTx` provides a way to ensure that each thread handling
-a request can have its own independent transaction. The `ThreadLocal`
-instance referenced from this field serves as a key that is used to look up
-a `TransactionImpl` value for the current thread. So, despite `currentTx` being
-declared static in class `TransactionManager`, there is _not_ exactly one incarnation
-of the field shared across all instances of Foo; instead, there are
-_multiple_ incarnations of the field, one per thread, and the
-incarnation of `currentTx` that is used when code performs a field access
-(`currentTx.get()`) depends on the thread which is executing the code.
-
-Using a `ThreadLocal` avoids the need to pass a `TransactionImpl` object as an argument
-to calls from the service handler through the business logic code and database driver back
-into the transaction manager code.
-
-Before executing any business logic the service dispatcher starts a new transaction 
-
-    TransactionManager.begin();
-
-Under this call the `TransactionManager` sets the thread local, associating
-a newly created transaction with the thread. Of course, it is an error to try to
-begin a new transaction when one is already active:
-
-    if (currentTx.get() == null) {
-      TransactionImpl txImpl = ...;
-      currentTx.set(txImpl);
-    } else {
-      throw ...
- 
-The database driver can subsequently enlist a database connection with the transaction
-without needing a reference to the current `TransactionImpl`:
-
-    try {
-      XAResource dbResource = connect(...);
-      TransactionManager.enlist(dbResource);
-      ...
-
-Similarly, the business logic can commit or rollback the current transaction without
-needing such a reference:
-
-    try {
-      ...
-      TransactionManager.commit();
-    } catch (Exception e) {
-       TransactionManager.rollback();
-    }
-
-Inside the call to `enlist` the current transaction can be retrieved
-from the `ThreadLocal`:
-
-      TransactionImpl txImpl = currentTx.get();
-      if (tx != null)
-        tx.enlist(resource);
-      else
-        throw ...
-
-Likewise in `commit` and `rollback` the transaction can be terminated and cleared
-
-      TransactionImpl txImpl = currentTx.get();
-      if (tx != null)
-        tx.commit(resource);
-        tx.set(null);
-      else
-        throw ...
-
-
-Although this example shows that `ThreadLocal`s can be used to implement
-the behaviour needed for this case there are problems with their design
-that affect even in this sort of well structured use. The problem is that
-`ThreadLocal` offer more flexibility than is needed for many application's
-needs and come with some significant costs:
-
-- they do not have a well-defined lifecycle
-- they are mutable
-- they incur a relatively high per thread storage cost
-
-### Unconstrained Mutability (Transactions Version)
-
-Every thread-local variable is _mutable_: that is to say,
-everyone who can access a `ThreadLocal`'s `get()` can also `set()` it
-to a different value, or `remove()` is altogether. Frameworks can wrap
-`ThreadLocal`s to make sure they cannot be set inappropriately, but
-they still carry the cost of mutability.
-
-Mutability by default is a bad decision.
-
-[ TLs being mutable fies in the face of the repeated advice in
-_Effective Java_ to minimize mutability.
-
-_Effective Java_, Item 8: Avoid finalizers and cleaners, by using
-try-with-resources and try...finally. Item 17: minimize mutability:
-don't provide methods that modify the object's state. Yet
-`ThreadLocal` depends on these things we're advised to minimize and
-avoid. ]
-
-Unconstrained mutability is prone to abuse. Badly designed code can make
-it very difficult to identify where and in what order state will be
-read and updated. This is possible even with a well-defined API like the
-`TransactionManager` example described above. A transaction could be started
-anywhere under the service handler thread, which is why the begin implementation
-checks no transaction is already active. Likewise, the business logic might
-locate calls to commit or rollback on different execution paths but incorrect
-logic could run the risk of trying to commit an already rolled back transaction,
-or worse fail either to commit or rollback.
-
-In the worst case, programming with thread local variables can lead to
-spaghetti-like coding, for example when used to return a hidden value from a
-method to some distant caller, far away in a deep call stack. This leads to code
-whose structure is hard to discern, let alone maintain.
-
-## Motivation  (ServerFramework Version)
+## Motivation
 
 Programs are usually built out of components that contribute independent,
 complementary functionality. For example a networked server may combine
@@ -190,7 +56,7 @@ state with the components via some alternative channel. This is already
 possible using existing JDK runtime APIs but the existing options present
 problems that class `ExtentLocal` is intended to avoid.
 
-### Current Alternative to ExtentLocals (ServerFramework Version)
+### Current Alternative to ExtentLocals
 
 Class `ThreadLocal` provides an example of how this might currently be
 implemented:
@@ -235,11 +101,10 @@ logic, such as, say, opening a database connection or logging a warning:
     class DBDriver {
       DBConnection open(...) throws InvalidAccessException {
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (permissions.allowed(DATABASE) {
-          ...
-        } else {
+        if (!permissions.allowed(DATABASE) {
           throw new  InvalidAccessException(...)
-      ...
+        }
+        ...
 
     class Logger {
       static int LOG_LEVEL = ...;
@@ -261,17 +126,17 @@ of a `String`:
                
       Logger.warn(() -> "Warning : %s you have been warned".format(request.getName());
 
-This variant of method warn `Supplier` avoids the cost of executing the
-format call in the case where the logger level is set to exclude printing
-of warning messages. The logger will only invoke the supplier code if
+This variant of method `warn` avoids the cost of executing the
+format call when the logger level is configured to exclude printing
+of warnings. The logger will only invoke the supplier code if
 needed. Unfortunately, this also means the logger code has to call
-back to arbitrary code supplied by the business log. It might prefer to
-rest the permissions for the duration of this call:
+back to arbitrary code supplied by the business logic. It might prefer to
+reset the permissions for the duration of this call:
 
     class Logger {
       ...
       void warn(Supplier<String> supplier) {
-        Permissions permissions = ServerFrameworkPERMISSIONS.get();
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
         if (!permissions.allowed(LOG) {
           throw new  InvalidAccessException(...)
         }
@@ -279,25 +144,25 @@ rest the permissions for the duration of this call:
            String message;
            Permissions reduced = permissions.restrictTo(LOG);
            try {
-              ServerFrameworkPERMISSIONS.set(reduced);
+              ServerFramework.PERMISSIONS.set(reduced);
               message = supplier.get();
            } finally {
-              ServerFrameworkPERMISSIONS.set(permissions)
+              ServerFramework.PERMISSIONS.set(permissions)
            }
            write(logFile, message);
            ...
 
-Although this example shows that `ThreadLocal`s can be used to implement
-the behaviour needed for this case there are problems with their design
-that affect even in this sort of well structured use. The problem is that
-`ThreadLocal` offer more flexibility than is needed for many application's
-needs and come with some significant costs:
+This example shows that `ThreadLocal`s can be used to implement
+the behaviour needed for this case. However, there are problems with their design
+that affect even this sort of well structured use.
+`ThreadLocal` offers more flexibility than is needed by many applications
+and comes with some significant costs:
 
-- they are mutable
-- they do not have a well-defined lifecycle
-- they incur a relatively high per thread storage cost
+- `ThreadLocal`s are mutable
+- They do not have a well-defined lifecycle
+- They incur a significant per thread storage cost
 
-### Unconstrained Mutability  (ServerFramework Version)
+### Unconstrained Mutability
 
 Every thread-local variable is _mutable_: that is to say,
 everyone who can access a `ThreadLocal`'s `get()` can also `set()` it
@@ -319,9 +184,9 @@ avoid. ]
 Unconstrained mutability is prone to abuse. Badly designed or buggy code
 can make it very difficult to identify where and in what order state will be
 read and updated. This is possible even with a well-defined API like the
-`ServerFramework` example described above.  Calls to `ThreadLocal.set()` do
-not just have a local effect. If a call to one of the Logger methods reset
-the permissions but failed to restore them, because, say, of incorrect
+`ServerFramework` example. Calls to `ThreadLocal.set()` do
+not just have a local effect. If one of the Logger methods resets
+the permissions but fails to restore them, because, say, of incorrect
 exception handling, then the error might only manifest in a call
 to the database driver performing some completely unrelated aspect of the
 business logic.
@@ -331,11 +196,11 @@ spaghetti-like coding, for example when used to return a hidden value from a
 method to some distant caller, far away in a deep call stack. This leads to code
 whose structure is hard to discern, let alone maintain.
          
-### ThreadLocal Persistence (ServerFramework Version)
+### ThreadLocal Persistence
 
 A secondary problem with `ThreadLocal`s relates to persistence of the
 ThreadLocal state throughout the lifetime of the thread or of any child
-threads that it creates. This is not a problem of behaviour but one of
+threads it creates. This is not so much a problem of behaviour but one of
 implementation cost.
 
 Once set, a ThreadLocal is _persistent_: that is to say, it is retained
@@ -353,20 +218,21 @@ longer in use is somewhat antithetical to the way that Java usually works.
 It would be better if the context associated with a thread were to be
 cleaned up automatically.
 
-### ThreadLocal Inheritance  (ServerFramework Version)
+### ThreadLocal Inheritance
 
 This problem with `ThreadLocal` persistence can be much worse when
-using multiple threads because`ThreadLocal`s may be inherited from
-parent to child thread. A `ThreadLocal` works by storing a reference
-to itself and to the value for the current Java `Thread` value in storage
-allocated by the `Thread`. Every newly created child `Thread` has to
+using many threads because`ThreadLocal`s may be inherited from
+parent to child thread. Setting a `ThreadLocal` to some value `X`
+works by storing a reference to the `ThreadLocal` and to `X` in
+storage allocated per `Thread`. Every newly created child `Thread` has to
 allocate storage for all its inherited `ThreadLocal` instances. It cannot
-share the storage used by the parent thread because of mutability. Both
-parent and child need to be able to change their own value without the
-change being seen by any other thread.
+share the storage used by the parent thread because `ThreadLocal`s are mutable.
+The `ThreadLocal` API requires the parent and child to be able to change their
+own value without the change being seen by any other thread. In most cases
+child threads do not need to update the `ThreadLocals` they inherit.
 
-In the ServerFramework example it would be natural to run each service
-request in a different thread:
+For example, in the ServerFramework it would be natural to run each service
+request in a different thread.
 
     class ServerFramework {
       ...
@@ -386,8 +252,8 @@ be inherited by each child thread, incurring a per-thread cost. Most
 of the time the child thread could get by with sharing rather than
 copying the parent thread's version of the permissions. They only
 ever need to be updated temporarily when a server component wants to
-reduce permissions. In other examples inheritability of a `ThraadLocal`
-may never also require mutability.
+reduce permissions. In other examples inheritability of a `ThreadLocal`
+may never demand mutability.
 
 ### The complications due to virtual threads
 
@@ -456,9 +322,9 @@ methods invoked transitively by them.)
 
 The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
-that extent. The extent local is bound to the value.
+that extent. The extent local is *bound* to the value.
                                    
-###  Example use Of ExtentLocal (ServerFramework)
+###  Example use Of ExtentLocal
 
 The `ServerFramework` example described above can easily be rewritten to
 use class `ExtentLocal` instead of `ThreadLocal`. The `ServerFramework` will
@@ -468,8 +334,8 @@ still use a static field to make the permissions available:
       final static ExtentLocal<PermissionsImpl> PERMISSIONS = ...;
       ...
 
-This ensures that field `Permissions` references an `ExtentLocal` instance
-but the `ExtentLocal` does not identify any values associated with running
+This ensures that `Permissions` references an `ExtentLocal` instance
+but the `ExtentLocal` does not yet identify any values associated with running
 threads. An attempt at this stage  to retrieve a value by calling
 `PERMISSIONS.get()` will fail with an exception.
 
@@ -490,13 +356,13 @@ set up the required permissions in the current thread:
                    .run(() -> { AppLogic.handleRequest(request); });
       ...
 
-The `where` clause in the above code *binds* `the ExtentLocal` referenced
+The `where` call in the above code *binds* `the ExtentLocal` referenced
 from `PERMISSIONS`. What that means is that a `get()` executed in code
-called below the `run()` clause will retrieve a value specific to this
-thread. The binding is only visible to code called below `run()`. If 
+called from the `run()` clause will retrieve a value specific to this
+thread. The binding is only visible in the extent of the code called from `run()`. If 
 the extent local is bound in a different thread then calls to `get()`
-below the run clause in that thread will retrieve the value passed in the
-`where() clause.
+from the `run()` call in that thread will retrieve the value bound in its
+`where()` call.
 
 Server components can use the `ExtentLocal` to retrieve the current thread's
 permission just as they did with the `ThreadLocal`. 
@@ -504,15 +370,14 @@ permission just as they did with the `ThreadLocal`.
     class DBDriver {
       DBConnection open(...) throws InvalidAccessException {
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (permissions.allowed(DATABASE) {
-          ...
-        } else {
+        if (!permissions.allowed(DATABASE) {
           throw new  InvalidAccessException(...)
-      ...
+        }
+        ...
 
-However, notice that calls to `open()`, `log()` etc will only be able
-to retrieve the permissions when they occur in a method below the call
-to `run()'.
+However, notice that calls to `open()`, `log()`, etc will only be able
+to retrieve the permissions when they occur in the extent of the call
+to `run()`.
 
 ###  Rebinding of ExtentLocal (ServerFramework)
 
@@ -520,9 +385,9 @@ In the original version of `ServerFramework` the logger needed to
 temporarily reduce the permissions associated with the current thread
 for the extent of a callback to a `StringSupplier`. This was implemented
 by overwriting and then restoring the original value of the `ThreadLocal`.
-`ExtentLocal` does not allow a called method to update the value set
+`ExtentLocal` does not allow a called method to update the value bound
 by its caller. However, it does allow a called method to pass on a
-different value to its callers.
+different value to its callees.
 
     class Logger {
       ...
@@ -540,10 +405,10 @@ different value to its callers.
            ...
 
 In this case `call()` is used instead of `run()` because the executed
-code needs to return a value. The `where` clause ensures that any
+code needs to return a value. `where()` ensures that any
 method in the extent below `call()` which tries to `get()` the value
 for `PERMISSIONS` will see the reduced PermissionsImpl rather than the
-one set by the service request handler. Passing on a different value
+one set by the `ServerFramework`. Passing on a different value
 to code executing in a nested extent as shown in the above example is
 referred to as *rebinding* the `ExtentLocal`.
 
@@ -553,6 +418,11 @@ A server framework may configure the behaviour of `run()` so that the
 user code will be run in a new virtual thread.
               
 -- Modify example to use StructuredExecutor--  
+                                  
+
+
+
+
 
 ---------------------------------- Saved original text from Motivation ---------------------
 
