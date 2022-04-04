@@ -46,7 +46,7 @@ components via some alternative channel.
     
     Thread 1                               ...                   Thread N
 
-    throw new InvalidPermissionException()                       DBPool.newConnection() 
+    InvalidPermissionException()                                 DBPool.newConnection() 
     DBDriver.open()   get  <------------------+    +------> get  DBDriver.open()
     ...                                       |    |             ...
     ...                                     PERMISSIONS          ...                     
