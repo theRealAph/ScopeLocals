@@ -423,9 +423,9 @@ another virtual thread.
 
 In general, for the reasons we've listed above, extent local variables
 are likely to be useful in many cases where thread local variables are
-used today. We continue to support thread local variables, even in
-Project Loom's new virtual threads, even though they're not ideal when
-threads are very numerous.
+used today. We continue to support thread local variables, even with
+virtual threads, despite them not being ideal when threads are very
+numerous.
 
 The first thing to do is determine whether migrating thread local to
 extent local variables is appropriate. If in your application thread
@@ -438,35 +438,33 @@ However, in many cases extent local variables are exactly what you
 need. We've already covered hidden parameters for callbacks in some
 depth, but there are other good ways to use extent locals.
 
-### Extent locals and recursion
+- *Extent locals and recursion* — Sometimes you want to be able to
+  detect recursion, perhaps because a framework isn't re-entrant or
+  because you want to limit recursion in some way. An extentlocal
+  variable provides a way to do this: set it once, invoke a method,
+  and somewhere deep in the call stack, test again to see if the
+  thread-local variable is set. More elaborately, you might need the
+  extent local variable to be a recursion counter.
 
-Sometimes you want to be able to detect recursion, perhaps because a
-framework isn't re-entrant or because you want to limit recursion in
-some way. An extent-local-local variable provides a way to do this:
-set it once, invoke a method, and somewhere deep in the call stack,
-test again to see if the thread-local variable is set. More
-elaborately, you might need the extent local variable to be a
-recursion counter.
+  The detection of recursion is also useful in the case of flattened
+  transactions: any transaction started when a transaction in progress
+  becomes part of the outermost transaction.
 
-The detection of recursion is also useful in the case of flattened
-transactions: any transaction started when a transaction in progress
-becomes part of the outermost transaction.
 
-### Contexts of many kinds: the notion of a "current context".
+- *The notion of a "current context"*  — Java Concurrency in Practice
+  talks about the use of a thread local variable to hold context:
 
-Java Concurrency in Practice talks about the use of a thread local
-variable to hold context:
+  "... containers associate a transaction context with an executing
+  thread for the duration of an EJB call. This is easily implemented
+  using a static Thread-Local holding the transaction context: when
+  framework code needs to determine what transaction is currently
+  running, it fetches the transaction context from this ThreadLocal."
 
-"... containers associate a transaction context with an executing
-thread for the duration of an EJB call. This is easily implemented
-using a static Thread-Local holding the transaction context: when
-framework code needs to determine what transaction is currently
-running, it fetches the transaction context from this ThreadLocal."
+  Another example occurs in graphics, where there is a drawing context.
+  Extent local variables, because of their automatic cleanup and
+  re-entrancy, are better suited to this than are thread local
+  variables.
 
-Another example occurs in graphics, where there is a drawing context.
-Extent local variables, because of their automatic cleanup and
-re-entrancy, are better suited to this than are thread local
-variables.
 
 [Generally, the Gods of Java want you to migrate to extent locals.]
 
