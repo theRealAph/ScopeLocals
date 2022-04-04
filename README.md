@@ -369,24 +369,24 @@ to be able to log messages but should not attempt to perform any further
 database processing. 
 
 The first thing `processQuery` does at 1. is ensure the caller has
-the `DATABASE` permission before proceeding to run the query at 2. It uses
-method `restrict` to construct a weaker Permissions object which removes
-everything except the `LOG` permission. The where call at 4 rebinds
-`PERMISSIONS` to this weaker set of `Permission`s for the extent of the
-`run()` call that follows.
+the `DATABASE` permission before proceeding to run the query at 2. At 3. it
+uses method `restrict` to construct a weaker Permissions object which
+removes everything except the `LOG` permission. The call to `where()` at
+4 rebinds `PERMISSIONS` to this weaker set of `Permission`s for the extent
+of the following `run()` call.
 
 The try at 5. in the lambda passed to `run()` opens a StructuredExecutor.
 This class manages collections of virtual threads using a fork join model.
-It will be automically closed an the end of the try with resources block.
+It gets automatically closed at the end of the try with resources block.
 
-Inside the for loop at 6. a virtual thread is forked to run the handler on
-the current `DBRow`. After the loop at 7. a call to `join()` is needed to
-ensure that all the rows have been processed before the try block is exited.
+Inside the `for` loop at 6. a virtual thread is forked to run the handler on
+each `DBRow`. After the loop at 7. a call to `join()` ensures that all the
+rows have been processed before the try block is exited.
 
 Rebinding ensures that the callback can only access the behaviour provided
 by the `Logger` API. The handler call at 6. is in the extent of the `run()`.
-If the handler tries to call a `DBDriver` API method it will call
-`PERMISSIONS.get()` and retrieve the weaker `Permissions` which does not
+If the handler tries to call a `DBDriver` API method that method will call
+`PERMISSIONS.get()`, retrieving the weaker `Permissions` which does not
 include `DATABASE`. The rebinding is only local to the `run()` call at 4.
 A call to `PERMISSIONS.get()` after the `run()` call completes will still
 see the original binding established by the `ServerFranework`.
@@ -409,15 +409,15 @@ thread without having to be copied.
 It is also worth noting that the fork/join model offered by `StructuredExecutor`
 means that a value bound in a call to to `where()` has a determinate lifetime,
 as far as visibility via the `ExtentLocal` is concerned. The reduced
-`Permission` object created at 3. is only available for the extent of the
+`Permission` object created at 3. is available for the extent of the
 `run()` call at 4. Once that call returns the current thread and its child
-threads can no longer be making any use of it
+threads will no longer need to make use of it.
 
 Using class StructuredExceutor to parallelise row processing means that query
 results returning thousands or even millions of rows can be executed in
 parallel. If a call to `rowHandler` needs to block, say to log a warning to
-disk, work can continue with almost no overhead by switching execution to
-another virtual thread. 
+a file on disk, work can continue by switching execution to another virtual
+thread with almost no overhead. 
 
 ## Migrating to extent local variables
 
