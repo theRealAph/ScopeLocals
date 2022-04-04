@@ -6,8 +6,7 @@ Define a standard, lightweight way to pass contextual information from
 a caller to callees in the currently executing thread, and in some
 cases to a group of threads. In particular, extent locals are intended
 to replace `ThreadLocal`s for sharing information with a very large
-number of threads. This usage especially applies to Project Loom's
-virtual threads.
+number of threads. This usage especially applies to virtual threads.
 
 ## Goals
 
@@ -63,11 +62,11 @@ share their own copy of data.
 
     class ServerFramework {
       // 1. Provide a per-thread channel betwen the framework and its components
-      final static ThreadLocal<PermissionsImpl> PERMISSIONS = ...;
+      final static ThreadLocal<Permissions> PERMISSIONS = ...;
       ...
       void processRequest(Request request, Response response) {
         int p = (request.isAdmin() ? LOG|DATABASE : LOG);
-        PermissionsImpl permissions = new PermissionsImpl(p);
+        Permissions permissions = new Permissions(p);
         // 2. Set permissions for request thread and run app logic
         PERMISSIONS.set(permissions);
         AppLogic.handleRequest(request, response);
@@ -111,7 +110,7 @@ _multiple_ incarnations of the field, one per thread, and the incarnation of
 `PERMISSIONS` that is used when code performs sets or gets the `ThreadLocal`
 depends on the thread which is executing the code.
 
-Using a `ThreadLocal` avoids the need to pass a `PermissionsImpl` object as
+Using a `ThreadLocal` avoids the need to pass a `Permissions` object as
 an argument to calls from the service handler through the business logic code
 and into the database driver or logger code. The declaration at 1. include an
 initialization that assigns a reference to a `ThreadLocal` object to field
@@ -161,7 +160,7 @@ that affect even this sort of well structured use.
   calls `remove()`. This is not so much a problem of behaviour as one of
   performance cost.
 
-  It is unfortunately common for developers to forget remove a `ThreadLocal`,
+  It is unfortunately common for developers to forget to remove a `ThreadLocal`,
   or even just to reset it to `null`.  Indeed, for programs that rely on the
   unconstrained mutability of `ThreadLocal` there may be no clear point at
   which it is safe to call `remove()`. This can lead to a long-term memory
@@ -181,7 +180,7 @@ that affect even this sort of well structured use.
   some storage private to thread `T` that holds a link from `L` to `V`.  
   If a newly created child `Thread` inherits `L` then it also has to allocate
   its own storage. When an application uses many `Thread`s
-  which inherit many `ThreadLocals` this can add significant mmeory costs. 
+  which inherit many `ThreadLocals` this can add significant memory costs. 
 
   Child threads cannot share the storage used by the parent thread because
   `ThreadLocal`s are mutable. The `ThreadLocal` API requires the parent and 
@@ -190,13 +189,13 @@ that affect even this sort of well structured use.
   do not `set()` the `ThreadLocals` they inherit.
 
 
-To sum up`ThreadLocal` offers more flexibility than is needed by many applications
-and comes with some significant costs:
+To sum up, `ThreadLocal` offers more flexibility than is needed by many applications
+and comes with some significant costs.
 
 ### Complications Due to Virtual Threads
 
 The above problems with thread local variables have become more pressing
-context of virtual threads. These threads are cheap and plentiful, unlike
+in the context of virtual threads. These threads are cheap and plentiful, unlike
 today's platform threads which are expensive and scarce.
 
 Platform Threads are:
@@ -261,18 +260,18 @@ The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
 that extent. The extent local is *bound* to the value.
                                    
-###  Example use Of ExtentLocal
+###  Example use Of Extent Local Variables
 
 The `ServerFramework` example described above can easily be rewritten to
 use class `ExtentLocal` instead of `ThreadLocal`.
 
      class ServerFramework {
       // 1. Provide a per-thread channel betwen the framework and its components
-      final static ExtentLocal<PermissionsImpl> PERMISSIONS = ...;
+      final static ExtentLocal<Permissions> PERMISSIONS = ...;
       ...
       void processRequest(Request request, Response response) {
         int p = (request.isAdmin() ? LOG|DATABASE : LOG);
-        PermissionsImpl permissions = new PermissionsImpl(p);
+        Permissions permissions = new Permissions(p);
         // 2. Bind the extent local for the extent of the run operation
         ExtentLocal.where(PERMISSIONS, permissions)
                      .run(() -> { AppLogic.handleRequest(request, response); });
@@ -294,7 +293,7 @@ use class `ExtentLocal` instead of `ThreadLocal`.
     }
     ....
 
-As before the `ServerFramework` includes an initialization at 1. which
+As before, the `ServerFramework` includes an initialization at 1. which
 ensures that field `PERMISSIONS` references an `ExtentLocal`. The important
 difference occurs at the point where previously there was a call to
 `ThreadLocal.set()`. This is changed to use a call to static methods
@@ -302,7 +301,7 @@ difference occurs at the point where previously there was a call to
 together to provide the immutable one-way, thread-local communication
 that the application needs.
 
-The `where` call  *binds* `the ExtentLocal` referenced from `PERMISSIONS`
+The `where()` call  *binds* `the ExtentLocal` referenced from `PERMISSIONS`
 for the extent of the `run()` call. What that means is that a call to
 `PERMISSIONS.get()` executed by any method called from `run()` will return
 the value provided as argument to `where()`. So, in this case if
@@ -322,67 +321,103 @@ would be thrown because `PERMISSIONS` is no longer bound.
 The second big difference is that the binding established by `where()` is
 immutable within the extent of `run()`. Methods called from `run()` can
 `get()` the current binding but there is no `set()` method allowing them
-to change the binding established by at point 1.
+to change the binding established at point 1.
 
-###  Rebinding of ExtentLocal
+###  Rebinding of Extent Local Variables
 
-The immutability of ExtentLocal bindings means that a caller can reliably
-communicate a single value to the methods it calls in some given thread.
-However, there are legitimate cases where one of those called methods would
+The immutability of ExtentLocal bindings means that within a thread a
+caller can reliably communicate a single value to the methods it calls.
+However, there are times when one of those called methods would
 need to communicate a different value to the methods it calls. The
 requirement is not to change the original binding but to establish a new
 binding for nested calls
 
-As an example consider the `Logger` class in the `ServerFramework` example.
-It provides a log API that can log levels at different levels of detail
-and uses a configuation setting to control which messages get logged.
-The method accepts a `Supplier<String>` so that expensive formatting
-is only done at the point where the decision has been taken to print
-the message:
+As an example consider the `DBDriver` class in the `ServerFramework` example.
 
-
-    Logger.log(DETAIL, () -> "Service  request id %s accumulated %d widgets".format(request.id(), request.widgeCount() );
-
-What this means is that the implementation needs to make a call back to
-code provided by the caller. The logger code only wants this code to 
-be able to use the LOG permissions
-
-    class Logger {
-      static int LOG_LEVEL = ...
-      void log(int level, Supplier<String> supplier) {
+    class Database {
+      void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
+        // 1. Get permissions for request thread and check 
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG) {
+        if (!permissions.allowed(DATABASE) {
           throw new  InvalidAccessException(...)
         }
-        if (level < LOG_LEVEL) {
-           Permissions reduced = permissions.restrictTo(LOG);
-           String message =
-              ExtentLocal.where(PERMISSIONS, reduced)
-                           .call(() -> { supplier.get(); }); 
-           write(logFile, message);
-           ...
+        // 2. Run the database query
+        List<DBRow> rows = executeQuery(query);
+        // 3. Reduce permissions to LOG only
+        Permissions reduced = permissions.restrict(LOG);
+        // 4. Rebind PERMISSIONS
+        ExtentLocal.where(ServerFramework.PERMISSIONS, reduced)
+                 .run(() -> 
+                     // 5. Parallelize with a fork join executor 
+                     try (var s = StructuredExecutor.open()) {
+                       for (var row : rows) {
+                         // 6. process each row in its own virtual thread
+                         s.fork(() -> rowHandler.apply(row));
+                       }
+                       // 7. wait for all virtual threads to complete
+                       s.join();
+                     }
+                 });
+      }
 
+Method `processQuery` runs a `query` against the database to retrieve a
+list of results of type `DBRow`.  Argument `rowHandler` is a callback
+of type `Consumer<DBRow>` which can be applied to each result by calling
+`rowHandler.apply(row)`.  In order to speed up processing of query results
+each call to `apply` is executed in its own virtual thread. The handler needs
+to be able to log messages but should not attempt to perform any further
+database processing. 
 
+The first thing `processQuery` does at 1. is ensure the caller has
+the `DATABASE` permission before proceeding to run the query at 2. It uses
+method `restrict` to construct a weaker Permissions object which removes
+everything except the `LOG` permission. The where call at 4 rebinds
+`PERMISSIONS` to this weaker set of `Permission`s for the extent of the
+`run()` call that follows.
 
-In this case `call()` is used instead of `run()` because the executed
-code needs to return a value. `where()` ensures that any
-method in the extent below `call()` which tries to `get()` the value
-for `PERMISSIONS` will see the reduced PermissionsImpl rather than the
-one set by the `ServerFramework`. Passing on a different value
-to code executing in a nested extent as shown in the above example is
-referred to as *rebinding* the `ExtentLocal`.
+The try at 5. in the lambda passed to `run()` opens a StructuredExecutor.
+This class manages collections of virtual threads using a fork join model.
+It will be automically closed an the end of the try with resources block.
 
-### Using extent local variables with threads
+Inside the for loop at 6. a virtual thread is forked to run the handler on
+the current `DBRow`. After the loop at 7. a call to `join()` is needed to
+ensure that all the rows have been processed before the try block is exited.
 
-A server framework may configure the behaviour of `run()` so that the
-user code will be run in a new virtual thread.
-              
--- Modify example to use StructuredExecutor--  
-                                  
+Rebinding ensures that the callback can only access the behaviour provided
+by the `Logger` API. The handler call at 6. is in the extent of the `run()`.
+If the handler tries to call a `DBDriver` API method it will call
+`PERMISSIONS.get()` and retrieve the weaker `Permissions` which does not
+include `DATABASE`. The rebinding is only local to the `run()` call at 4.
+A call to `PERMISSIONS.get()` after the `run()` call completes will still
+see the original binding established by the `ServerFranework`.
 
+###  Inheritance of Extent Local Variables
 
+There is one important detail in the `processQuery` code that needs
+highlighing. Rebinding of `PERMISSIONS` at 4. happens in the thread that
+calls `processQuery`. However, the callback to `rowHandler.apply()` happens
+in a forked virtualThread(). How does the `get()` in the forked thread
+retrieve the value that was `set()` in the forking thread? This works because
+class `StructuredExecutor` has been designed to share `ExtentLocal` bindings
+across fork calls. Any `ExtentLocal` bindings present in the thread that calls
+`fork()` will be visible to the forked virtual thread.
 
+It is worth emphasising that these bindings really are *shared*. The set of
+bindings established by the forking thread can be referenced by the forked
+thread without having to be copied.
 
+It is also worth noting that the fork/join model offered by `StructuredExecutor`
+means that a value bound in a call to to `where()` has a determinate lifetime,
+as far as visibility via the `ExtentLocal` is concerned. The reduced
+`Permission` object created at 3. is only available for the extent of the
+`run()` call at 4. Once that call returns the current thread and its child
+threads can no longer be making any use of it
+
+Using class StructuredExceutor to parallelise row processing means that query
+results returning thousands or even millions of rows can be executed in
+parallel. If a call to `rowHandler` needs to block, say to log a warning to
+disk, work can continue with almost no overhead by switching execution to
+another virtual thread. 
 
 ## Migrating to extent local variables
 
@@ -408,7 +443,7 @@ depth, but there are other good ways to use extent locals.
 Sometimes you want to be able to detect recursion, perhaps because a
 framework isn't re-entrant or because you want to limit recursion in
 some way. An extent-local-local variable provides a way to do this:
-set it once, invoke a method, and somwhere deep in the call stack,
+set it once, invoke a method, and somewhere deep in the call stack,
 test again to see if the thread-local variable is set. More
 elaborately, you might need the extent local variable to be a
 recursion counter.
@@ -433,22 +468,14 @@ Extent local variables, because of their automatic cleanup and
 re-entrancy, are better suited to this than are thread local
 variables.
 
+[Generally, the Gods of Java want you to migrate to extent locals.]
 
-Generally, the Gods of Java want you to migrate to extent locals.]
-
-
-[ Youre looking forward to virt threads, so how do extent local
-variables help out with that. (Grand claims from the motivation
-revisited.)
-
-AN EXAMPLE FROM THE VIRTUAL THREADS / STRUCTURED CONCURRENCY JEP HERE
-that produces lots for virtual threads.
 
 ## Where can extent local variables _not_ replace thread local variables?
 
 There are cases where thread local variables are more appropriate than
 extent local variables. For example, one popular use of `ThreadLocal`
-is to cache objects that are expensive to create. One notorious
+is to cache objects that are expensive to create. A notorious
 example is `java.text.DateFormat`, which is mutable so cannot be
 shared between threads without synchronization. In this case, creating
 a thread local `DateFormat` object which persists for the lifetime of
@@ -472,7 +499,8 @@ Extent locals have the following properties:
   away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
-  field of a variable `final` does. The one-way nature of the channel makes it much easier to reason about the flow of data in a program.
+  field of a variable `final` does. The one-way nature of the channel makes it much
+  easier to reason about the flow of data in a program.
 
 ## API
 
@@ -496,3 +524,7 @@ And we'd still have the problem of memory management.
 It is better, therefore, not to modify `ThreadLocal` but to give
 extent locals a separate identity from thread locals.
 
+## Historical Note
+The idea for Extent Locals was inspired by the way many Lisp dialects
+provide support for dynamically scoped free variables, in particular
+how they behave in a deep-bound, multi-threaded runtime like Interlisp-D.
