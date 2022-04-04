@@ -44,12 +44,14 @@ where the data needs to be pushed through calls to the business logic code
 it simplifies the implementation if the server can share context data with the
 components via some alternative channel. 
     
-    Thread 1                               ...                    Thread N
-    Logger.log()   get  <---------------------+   +--------> get  Logger.log()
-    ...                                       |   |               ...
-    ...                                    PERMISSIONS            ...                     
-    AppLogic.handleRequest()                  |   |               AppLogic.handleRequest()
-    ServerFrameWork.processRequest() :  set --+   +--------- set  ServerFrameWork.processRequest()
+    Thread 1                               ...                   Thread N
+
+    throw new InvalidPermissionException()                       DBPool.newConnection() 
+    DBDriver.open()   get  <------------------+    +------> get  DBDriver.open()
+    ...                                       |    |             ...
+    ...                                     PERMISSIONS          ...                     
+    AppLogic.handleRequest()                  |    |             AppLogic.handleRequest()
+    ServerFrameWork.processRequest() :  set --+    +------- set  ServerFrameWork.processRequest()
      
 What makes this complicated is that each thread needs its own independent
 permissions so it also needs its own independent channel. 
