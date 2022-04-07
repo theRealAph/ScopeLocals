@@ -34,15 +34,16 @@ Programs are usually built out of components that contribute independent,
 complementary functionality. For example a networked server may combine
 business logic to handle service requests with components such as a database
 driver providing data persistence and a logging framework that records
-progress or noteworthy events. As a security measure, the thread which
-serves an individual request might be provided with a `Permissions` token
-which controls access to the operations provided by these server components.
+progress or noteworthy events. These components often need to share data
+between themselves independent from the business logic. For example, as a
+security measure, the server might allocate a `Permissions` token  to each
+thread that handles a request. The server components would use the token to
+controls access to the operations they provide.
 
-Per-thread context such as the permissions token, would normally be communicated
-via method arguments. However, in cases like this
-where the data needs to be pushed through calls to the business logic code
-it simplifies the implementation if the server can share context data with the
-components via some alternative channel. 
+Per-thread context data is normally communicated via method arguments. However,
+in a case like this, where the data needs to be pushed through calls to the
+business logic code it simplifies the implementation if the server can share
+context with the components via some alternative channel. 
     
     Thread 1                               ...                   Thread N
 
@@ -54,7 +55,10 @@ components via some alternative channel.
     ServerFrameWork.processRequest() :  set --+    +------- set  ServerFrameWork.processRequest()
      
 What makes this complicated is that each thread needs its own independent
-permissions so it also needs its own independent channel. 
+permissions so it also needs its own independent channel. In the diagram
+above the thread on the right has permission to access the database and can
+proceed to open a connection. The thread on the right has no such permission
+so the open attempt fails with an `InvalidPermissionException`.
 
 ### Current Capabilities
 
@@ -115,12 +119,11 @@ depends on the thread which is executing the code.
 Using a `ThreadLocal` avoids the need to pass a `Permissions` object as
 an argument to calls from the service handler through the business logic code
 and into the database driver or logger code. The declaration at 1. include an
-initialization that assigns a reference to a `ThreadLocal` object to field
+initialization that creates a `ThreadLocal` object and assigns it to field
 `PERMISSIONS`. Each server thread that handles an incoming request still needs
 to call the `set()` method at 2. This ensures that the incarnation of field
-`PERMISSIONS` specific to the handler thread identifies a set of permissions
-appropriate to the type of request. The server is now ready to execute the
-business logic.
+`PERMISSIONS` specific to the handler thread identifies the right permissions
+for that request. The server is now ready to execute the business logic.
 
 The logger and database components call the `get()` method at 3. and 5. to
 retrieve the permissions for the current thread. They ensure that the
@@ -140,8 +143,9 @@ that affect even this sort of well structured use.
  
   This is possible even with a well-defined API like the `ServerFramework`
   example. If a Logger method accidentally reset the permissions to
-  only include LOG the error would only appear in a call to the database
-  driver performing a completely unrelated aspect of the business logic.
+  only include `LOG` the error would only appear when the database
+  driver threw an exception while performing some completely unrelated
+  aspect of the business logic.
 
   In the example, what is really needed is a simple, one-way broadcast
   with a single point of assignment in a caller (at 1.) and multiple
@@ -181,8 +185,8 @@ that affect even this sort of well structured use.
   `V` by some Java `Thread` `T` the implementation requires allocating
   some storage private to thread `T` that holds a link from `L` to `V`.  
   If a newly created child `Thread` inherits `L` then it also has to allocate
-  its own storage. When an application uses many `Thread`s
-  which inherit many `ThreadLocals` this can add significant memory costs. 
+  its own storage. When an application uses many `Thread`s and they, in
+  turn, inherit many `ThreadLocals` this can add significant memory costs. 
 
   Child threads cannot share the storage used by the parent thread because
   `ThreadLocal`s are mutable. The `ThreadLocal` API requires the parent and 
@@ -222,8 +226,8 @@ virtual thread to carry thread-local variables. The short lifetime of
 virtual threads minimises the problem of long term memory leaks via
 thread locals. An explicit `remove()` isn't necessary when a thread,
 virtual or not, terminates, because when a thread terminates all thread
-local variables are automatically removed. However, if you have a
-million threads and every one has its own inevitably mutable set of
+local variables are automatically removed. However, if you have thousands
+or millions of threads and every one has its own inevitably mutable set of
 thread local variables, the memory footprint may become significant.
 
 It would be ideal if the Java Platform provided a way to have per
@@ -232,7 +236,7 @@ given the low cost of forking virtual threads, inheritable. Because
 these ideal per thread variables are immutable, their data can be
 easily shared by child threads, rather than copied to child
 threads. Thread local variables were the 90s realization of per thread
-variables; we need a better realization of per thread vairables for
+variables; we need a better realization of per thread variables for
 the modern era.
 
 ## Description
@@ -315,8 +319,8 @@ It also means that the value retrieved by the `get()` call is specific
 to whichever thread is executing the methods. As with `ThreadLocal`, an
 `ExtentLocal` has an incarnation that is per thread.
 
-The first big difference is that the binding by `where()` is only visible
-from the extent of the code called from `run()`. If a call to
+The first big difference is that the binding established by `where()` is only
+visible from the extent of the code called from `run()`. If a call to
 `PERMISSIONS.get()` was inserted after the call to `run()` an exception
 would be thrown because `PERMISSIONS` is no longer bound.
 
@@ -330,11 +334,12 @@ to change the binding established at point 1.
 The immutability of ExtentLocal bindings means that within a thread a
 caller can reliably communicate a single value to the methods it calls.
 However, there are times when one of those called methods would
-need to communicate a different value to the methods it calls. The
+need to communicate a different value to the methods *it* calls. The
 requirement is not to change the original binding but to establish a new
 binding for nested calls
 
-As an example consider the `DBDriver` class in the `ServerFramework` example.
+As an example consider this new method of the `DBDriver` class from the
+`ServerFramework` example.
 
     class Database {
       void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
@@ -364,11 +369,13 @@ As an example consider the `DBDriver` class in the `ServerFramework` example.
 
 Method `processQuery` runs a `query` against the database to retrieve a
 list of results of type `DBRow`.  Argument `rowHandler` is a callback
-of type `Consumer<DBRow>` which can be applied to each result by calling
-`rowHandler.apply(row)`.  In order to speed up processing of query results
-each call to `apply` is executed in its own virtual thread. The handler needs
-to be able to log messages but should not attempt to perform any further
-database processing. 
+of type `Consumer<DBRow>`. That means it can be applied to each result by
+calling `rowHandler.apply(row)`.  In order to speed up processing of query
+results each call to `apply` is executed in its own virtual thread. The
+handler needs to be able to log messages but should not attempt to perform
+any further database processing. If a virtual thread needs to wait for a
+log write to complete another virtual thread will be resumed, allowing
+the application to make progress.
 
 The first thing `processQuery` does at 1. is ensure the caller has
 the `DATABASE` permission before proceeding to run the query at 2. At 3. it
@@ -377,13 +384,18 @@ removes everything except the `LOG` permission. The call to `where()` at
 4 rebinds `PERMISSIONS` to this weaker set of `Permission`s for the extent
 of the following `run()` call.
 
-The try at 5. in the lambda passed to `run()` opens a StructuredExecutor.
-This class manages collections of virtual threads using a fork join model.
-It gets automatically closed at the end of the try with resources block.
+The example employs a new class `StructuredExecutor` to create and manage
+the virtual threads. The try at 5. in the lambda passed to `run()` opens
+a `StructuredExecutor`. which manages collections of virtual threads using
+a fork join model. It gets automatically closed at the end of the try with
+resources block.
 
 Inside the `for` loop at 6. a virtual thread is forked to run the handler on
 each `DBRow`. After the loop at 7. a call to `join()` ensures that all the
-rows have been processed before the try block is exited.
+rows have been processed before the try block is exited. The `join()` call
+is not strictly needed. When the `try` block is exited the `StructuredExcutor`
+`close()` method gets called, ensuring that all forked virtual threads are
+joined before it completes.
 
 Rebinding ensures that the callback can only access the behaviour provided
 by the `Logger` API. The handler call at 6. is in the extent of the `run()`.
