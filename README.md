@@ -346,7 +346,7 @@ to change the binding established at point 1.
 ###  Rebinding of Extent Local Variables
 
 The immutability of `ExtentLocal` bindings means that within a thread a
-caller can reliably communicate a constant value to the methods it calls.
+caller can use an `ExtentLocal` to reliably communicate a constant value to the methods it calls.
 However, there are times when one of those called methods might
 need to use the same `ExtentLocal` variable to communicate a different
 value to the methods *it* calls. The
