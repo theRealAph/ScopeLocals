@@ -10,12 +10,12 @@ number of child threads. This usage especially applies to virtual threads.
 
 ## Goals
 
-- *Ease of use* — Providing a clear programming model to share data
+- *Ease of use* — Provide a clear programming model to share data
   within and across threads in order to simplify reasoning about
   data flow.
-- *Comprehensibility* — Making the lifetime of shared data more
+- *Comprehensibility* — Make the lifetime of shared data
   clearly visible in the program code. 
-- *Performance* — Treating shared data as immutable so as to allow
+- *Performance* — Treat shared data as immutable so as to allow
   sharing among large numbers of threads. 
 
 ## Non-Goals
