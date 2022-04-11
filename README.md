@@ -17,8 +17,8 @@ number of child threads. This usage especially applies to virtual threads.
   clearly visible in the program code. 
 - *Performance* — Treat shared data as immutable so as to allow
   sharing among large numbers of threads.
-- *Robustness* — Ensure that access to data shared by a caller
-   is restricted only to legitimate callees
+- *Robustness* — Ensure that data shared by a caller
+   is  only accessible to legitimate callees
 
 ## Non-Goals
 
