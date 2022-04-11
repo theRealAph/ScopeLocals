@@ -457,7 +457,7 @@ The first thing to do is determine whether migrating thread local to
 extent local variables is appropriate. If in your application thread
 local variables are used in an unstructured way so that a deep callee
 `set()`s a `ThreadLocal` which is then retrieved by the caller,
-migration may be difficult, and you may find thre is little to be
+migration may be difficult, and you may find there is little to be
 gained.
 
 However, in many cases extent local variables are exactly what you
@@ -468,23 +468,13 @@ depth, but there are other good ways to use extent locals.
   detect recursion, perhaps because a framework isn't re-entrant or
   because you want to limit recursion in some way. An extentlocal
   variable provides a way to do this: set it once, invoke a method,
-  and somewhere deep in the call stack, test again to see if the
-  thread-local variable is set. More elaborately, you might need the
+  and somewhere deep in the call stack, call `ExtentLocal.isBound()` to see if the
+  thread-local variable is set. More elaborately, you might want the
   extent local variable to be a recursion counter.
 
-  The detection of recursion is also useful in the case of flattened
+  The detection of recursion would also be useful in the case of flattened
   transactions: any transaction started when a transaction in progress
   becomes part of the outermost transaction.
-
-
-- *The notion of a "current context"*  — Java Concurrency in Practice
-  talks about the use of a thread local variable to hold context:
-
-  "... containers associate a transaction context with an executing
-  thread for the duration of an EJB call. This is easily implemented
-  using a static Thread-Local holding the transaction context: when
-  framework code needs to determine what transaction is currently
-  running, it fetches the transaction context from this ThreadLocal."
 
   Another example occurs in graphics, where there is a drawing context.
   Extent local variables, because of their automatic cleanup and
@@ -523,7 +513,8 @@ Extent locals have the following properties:
   away `x.get()` is from the point that the extent local `x` is bound.
 * _Structure_: These properties also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
-  field of a variable `final` does. The one-way nature of the channel makes it much
+  field of a variable `final` does. The one-way nature of the channel
+  from caller to callee makes it much
   easier to reason about the flow of data in a program.
 
 ## API
