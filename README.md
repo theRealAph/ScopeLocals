@@ -18,7 +18,7 @@ number of child threads. This usage especially applies to virtual threads.
 - *Performance* — Treat shared data as immutable so as to allow
   sharing among large numbers of threads.
 - *Robustness* — Ensure that data shared by a caller
-   is  only accessible to legitimate callees
+   is only accessible to legitimate callees.
 
 ## Non-Goals
 
@@ -33,14 +33,14 @@ of interface `AutoCloseable`.
 ## Motivation
 
 Programs are usually built out of components that contribute independent,
-complementary functionality. For example a networked server may combine
+complementary functionality. For example, a networked server may combine
 business logic to handle service requests with components such as a database
-driver providing data persistence and a logging framework that records
-progress or noteworthy events. These components often need to share data
-between themselves independent from the business logic. For example, as a
+driver providing data persistence, and a logging framework that records
+progress or noteworthy events. Such server components often need to share data
+between themselves, independent from the business logic. For example, as a
 security measure, the server might allocate a `Permissions` token  to each
 thread that handles a request. The server components would use the token to
-controls access to the operations they provide.
+restrict access to the operations they provide.
 
 Per-thread context data is normally communicated via method arguments. However,
 in a case like this, where the data needs to be pushed through calls to the
