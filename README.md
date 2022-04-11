@@ -345,12 +345,13 @@ to change the binding established at point 1.
 
 ###  Rebinding of Extent Local Variables
 
-The immutability of ExtentLocal bindings means that within a thread a
-caller can reliably communicate a single value to the methods it calls.
-However, there are times when one of those called methods would
-need to communicate a different value to the methods *it* calls. The
+The immutability of `ExtentLocal` bindings means that within a thread a
+caller can reliably communicate a constant value to the methods it calls.
+However, there are times when one of those called methods might
+need to use the same `ExtentLocal` variable to communicate a different
+value to the methods *it* calls. The
 requirement is not to change the original binding but to establish a new
-binding for nested calls
+binding for nested calls.
 
 As an example consider this new method of the `DBDriver` class from the
 `ServerFramework` example.
