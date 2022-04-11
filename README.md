@@ -46,7 +46,14 @@ Thread context data is normally communicated from a caller
 to called methods in the same thread via method arguments. However,
 in a case like this, where data needs to be pushed through
 business logic calls it simplifies the implementation if the server can share
-context with the components via some alternative channel. 
+context with its components via some alternative channel. 
+
+The diagram below illustrates the sort of behaviour we would like. `PERMISSIONS`
+provides a direct per-thread channel from the `ServereFramework` to the `DBDriver`
+server component. The permissions set `ServerFrameWork.processRequest()` in Thread 1
+and read by `DBDriver.open()` do not include permission to access the database and
+an `InvalidPermissionException` is thrown. The permissions set in thread allow the
+call to `DBPool.newConnection() to proceed.
     
     Thread 1                               ...                   Thread N
 
