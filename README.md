@@ -157,7 +157,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
  
   Such problems are possible even with a well-defined API like the `ServerFramework`
   example. If a Logger method accidentally reset the permissions to
-  only include `LOG` the error would only appear when the database
+  only include `LOG`, an error would only appear when the database
   driver threw an exception while performing some completely unrelated
   aspect of the business logic.
 
