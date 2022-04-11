@@ -240,7 +240,7 @@ virtual threads minimises the problem of long term memory leaks via
 thread locals. An explicit `remove()` isn't necessary when a thread,
 virtual or not, terminates, because when a thread terminates all thread
 local variables are automatically removed. However, if you have thousands
-or millions of threads and every one has its own inevitably mutable set of
+or millions of threads and every one has its own, inevitably mutable, set of
 thread local variables, the memory footprint may become significant.
 
 It would be ideal if the Java Platform provided a way to have per
