@@ -155,7 +155,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   buggy code can make it very difficult to identify where and in what
   order state will be read and updated.
  
-  This is possible even with a well-defined API like the `ServerFramework`
+  Such problems are possible even with a well-defined API like the `ServerFramework`
   example. If a Logger method accidentally reset the permissions to
   only include `LOG` the error would only appear when the database
   driver threw an exception while performing some completely unrelated
