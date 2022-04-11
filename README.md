@@ -42,9 +42,10 @@ security measure, the server might allocate a `Permissions` token  to each
 thread that handles a request. The server components would use the token to
 restrict access to the operations they provide.
 
-Per-thread context data is normally communicated via method arguments. However,
-in a case like this, where the data needs to be pushed through calls to the
-business logic code it simplifies the implementation if the server can share
+Thread context data is normally communicated from a caller
+to called methods in the same thread via method arguments. However,
+in a case like this, where data needs to be pushed through
+business logic calls it simplifies the implementation if the server can share
 context with the components via some alternative channel. 
     
     Thread 1                               ...                   Thread N
