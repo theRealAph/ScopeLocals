@@ -229,12 +229,12 @@ Virtual Threads are:
 * Lightweight
 * Single-use
 
-It would certainly be useful for these numerous cheap and plentiful
+It would certainly be useful for these numerous, cheap and plentiful
 threads to be able to access some context from their parent. For
 example, they may share a logger on an output stream. Perhaps they may
 share some kind of security policy too.
 
-Because virtual threads are still threads, it is legitimate to for a
+Because virtual threads are still `Thread`s, it is legitimate for a
 virtual thread to carry thread-local variables. The short lifetime of
 virtual threads minimises the problem of long term memory leaks via
 thread locals. An explicit `remove()` isn't necessary when a thread,
