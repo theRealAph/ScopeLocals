@@ -69,10 +69,6 @@ call to `DBPool.newConnection()` to proceed.
     AppLogic.handleRequest()                 |       |          AppLogic.handleRequest()
     ServerFrameWork.processRequest() :  set -+       +---- set  ServerFrameWork.processRequest()
      
-In the diagram above, the thread on the right has permission to access the database and can
-proceed to open a connection. The thread on the left has no such permission
-so the open attempt fails with an `InvalidPermissionException`.
-
 ### Current Capabilities
 
 Developers traditionally turn to `ThreadLocal` in situations like this. It
