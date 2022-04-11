@@ -125,8 +125,8 @@ way to ensure that each thread handling a request can have its own independent
 permissions. A `ThreadLocal` serves as a key that is used to look up
 a `Permission` value for the current thread. So, there is not exactly _one_
 incarnation of field `PERMISSIONS` shared across all instances of Foo; instead, there are
-_multiple_ incarnations of the field, one per thread, and the incarnation of
-`PERMISSIONS` that is used when code performs sets or gets the `ThreadLocal`
+_multiple_ incarnations of the field, one per thread, and the incarnation
+that is used when code sets or gets `PERMISSIONS`
 depends on the thread which is executing the code.
 
 Using a `ThreadLocal` avoids the need to pass a `Permissions` object as
