@@ -199,10 +199,10 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   thread local variable set in that thread. If a newly created child `Thread`
   inherits the thread local it has to allocate its own storage. When an
   application uses many `Thread`s and they, in
-  turn, inherit many `ThreadLocals` this can add significant memory costs 
+  turn, inherit `ThreadLocals` this can add significant memory costs. 
 
   Child threads cannot share the storage used by the parent thread because
-  `ThreadLocal`s are mutable. The `ThreadLocal` API requires the parent and 
+  `ThreadLocal`s are _mutable_. The `ThreadLocal` API requires the parent and 
   child to be able to change their own value without the change being seen
   by the other thread. This is unfortunate because in most cases child threads
   do not `set()` the `ThreadLocals` they inherit.
