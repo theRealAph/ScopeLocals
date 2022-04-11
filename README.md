@@ -182,7 +182,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
 
   It is unfortunately common for developers to forget to remove a `ThreadLocal`,
   or even just to reset it to `null`.  Indeed, for programs that rely on the
-  unconstrained mutability of `ThreadLocal` there may be no clear point at
+  unconstrained mutability of `ThreadLocal`, there may be no clear point at
   which it is safe to call `remove()`. This can lead to a long-term memory
   leak. Even though the program may have long since moved on from having
   any use for an object referenced from the `ThreadLocal`, it will not be
@@ -195,12 +195,11 @@ of `ThreadLocal` that affect even this sort of well-structured use.
 
 - *Inheritance* — The `ThreadLocal` persistence problem can be much worse
   when using large numbers of threads because`ThreadLocal`s may be inherited
-  from parent to child thread. When a `ThreadLocal` `L` is set to a value
-  `V` by some Java `Thread` `T` the implementation requires allocating
-  some storage private to thread `T` that holds a link from `L` to `V`.  
-  If a newly created child `Thread` inherits `L` then it also has to allocate
-  its own storage. When an application uses many `Thread`s and they, in
-  turn, inherit many `ThreadLocals` this can add significant memory costs. 
+  from parent to child thread. Each thread has to allocate storage for every
+  thread local variable set in that thread. If a newly created child `Thread`
+  inherits the thread local it has to allocate its own storage. When an
+  application uses many `Thread`s and they, in
+  turn, inherit many `ThreadLocals` this can add significant memory costs 
 
   Child threads cannot share the storage used by the parent thread because
   `ThreadLocal`s are mutable. The `ThreadLocal` API requires the parent and 
