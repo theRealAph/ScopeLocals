@@ -50,6 +50,9 @@ context with its components via some alternative channel.
 
 The diagram below illustrates the sort of behaviour we would like. In this example
 there are two threads handling a request. Both attempt to open a database connection.
+Each thread needs its own independent permissions, so it also needs its own independent
+channel.
+
 `PERMISSIONS` acts as a direct, per-thread channel from the `ServerFramework` to the `DBDriver`
 server component. The permissions set from `ServerFrameWork.processRequest()` in
 Thread 1 and read by `DBDriver.open()` do not include permission to access the database, so
@@ -66,8 +69,7 @@ call to `DBPool.newConnection()` to proceed.
     AppLogic.handleRequest()                  |    |             AppLogic.handleRequest()
     ServerFrameWork.processRequest() :  set --+    +------- set  ServerFrameWork.processRequest()
      
-What makes this complicated is that each thread needs its own independent
-permissions so it also needs its own independent channel. In the diagram
+In the diagram
 above the thread on the right has permission to access the database and can
 proceed to open a connection. The thread on the right has no such permission
 so the open attempt fails with an `InvalidPermissionException`.
