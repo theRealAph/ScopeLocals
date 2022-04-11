@@ -129,7 +129,7 @@ _multiple_ incarnations of the field, one per thread, and the incarnation
 that is used when code sets or gets `PERMISSIONS`
 depends on the thread which is executing the code.
 
-Using a `ThreadLocal` avoids the need to pass a `Permissions` object as
+Using a `ThreadLocal` in this way avoids the need to pass a `Permissions` object as
 an argument to calls from the service handler through the business logic code
 and into the database driver or logger code. The declaration at 1. include an
 initialization that creates a `ThreadLocal` object and assigns it to field
