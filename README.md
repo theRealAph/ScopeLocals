@@ -3,10 +3,10 @@
 ## Summary
 
 Define a standard, lightweight way to pass contextual information from
-a caller to callees in the currently executing thread, and in some
-cases to a group of threads. In particular, extent locals are intended
+a caller to callees in the currently executing thread, or in its child
+threads. In particular, extent locals are intended
 to replace `ThreadLocal`s for sharing information with a very large
-number of threads. This usage especially applies to virtual threads.
+number of child threads. This usage especially applies to virtual threads.
 
 ## Goals
 
