@@ -168,7 +168,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   complex API of `ThreadLocal`.
 
   `ThreadLocal` was _specified_ to provide unconstrained mutability in order to
-  support a more general model of communication than we need. Data is able to flow in
+  support a more general model of communication than we usually need. Data is able to flow in
   either direction between a caller and called method. This generality may be 
   needed for a few difficult cases. However, in the worst case, programming
   with thread local variables can lead to spaghetti-like dataflow. The result
