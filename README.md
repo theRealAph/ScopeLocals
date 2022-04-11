@@ -146,7 +146,7 @@ to execute it at 4. and 6.
 
 This example demonstrates that `ThreadLocal`s _can_ be used to implement the
 behaviour needed for this case. However, there are problems with the design
-of `ThreadLocal`s that affect even this sort of well structured use.
+of `ThreadLocal` that affect even this sort of well-structured use.
  
 - *Unconstrained Mutability*  —  Every thread-local variable is _mutable_:
   that is to say, any code that can access a `ThreadLocal`'s `get()` can
