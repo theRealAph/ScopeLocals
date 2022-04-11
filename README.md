@@ -50,13 +50,13 @@ context with its components via some alternative channel.
 
 The diagram below illustrates the sort of behaviour we would like. In this example
 there are two threads handling a request. Both attempt to open a database connection.
-`PERMISSIONS` acts as a direct per-thread channel from the `ServerFramework` to the `DBDriver`
+`PERMISSIONS` acts as a direct, per-thread channel from the `ServerFramework` to the `DBDriver`
 server component. The permissions set from `ServerFrameWork.processRequest()` in
-Thread 1 and read by `DBDriver.open()` do not include permission to access the database and
-an `InvalidPermissionException` is thrown. The permissions set in thread allow the
-call to `DBPool.newConnection() to proceed.
+Thread 1 and read by `DBDriver.open()` do not include permission to access the database, so
+an `InvalidPermissionException` is thrown. The permissions set in Thread 2 permit the
+call to `DBPool.newConnection()` to proceed.
     
-    Thread 1                               ...                   Thread N
+    Thread 1                               ...                   Thread 2
 
     InvalidPermissionException()                                 DBPool.newConnection() 
     DBDriver.open()   get  <------------------+    +------> get  DBDriver.open()
