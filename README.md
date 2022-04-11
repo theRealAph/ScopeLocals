@@ -164,10 +164,10 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   In our example, what is really needed is a simple, one-way broadcast
   with a single point of assignment in a caller (at 2.) and multiple
   points in called code where the data is consumed (at 3. and 5.).
-  This is a very common pattern and it is not supported well by the
+  This is a very common pattern, and it is not supported well by the
   complex API of `ThreadLocal`.
 
-  `ThreadLocal` was specified to provide unconstrained mutability in order to
+  `ThreadLocal` was _specified_ to provide unconstrained mutability in order to
   support a much more general model of communication. Data is able to flow in
   either direction between a caller and called method. This generality may be 
   needed for a few difficult cases. However, in the worst case, programming
