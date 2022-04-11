@@ -208,7 +208,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   do not `set()` the `ThreadLocals` they inherit.
 
 
-To sum up, `ThreadLocal` offers more flexibility than is needed by many applications
+To sum up, `ThreadLocal` offers more complexity than is needed by many applications
 and comes with some significant costs.
 
 ### Complications Due to Virtual Threads
