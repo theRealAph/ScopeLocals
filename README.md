@@ -310,20 +310,20 @@ use class `ExtentLocal` instead of `ThreadLocal`.
       }
       ...
     }
-    ....
+    ...
 
 As before, the `ServerFramework` includes an initialization at 1. which
 ensures that field `PERMISSIONS` references an `ExtentLocal`. The important
-difference occurs at the point where previously there was a call to
-`ThreadLocal.set()`. This is changed to use a call to static methods
+difference occurs at point 2. where previously there was a call to
+`ThreadLocal.set()`. This is changed to use a call to methods
 `where()` and `run()` of class `ExtentLocal`. These two calls work
 together to provide the immutable one-way, thread-local communication
 that the application needs.
 
 The `where()` call  *binds* `the ExtentLocal` referenced from `PERMISSIONS`
-for the extent of the `run()` call. What that means is that a call to
+for the extent of the `run()` call. That means a call to
 `PERMISSIONS.get()` executed by any method called from `run()` will return
-the value provided as argument to `where()`. So, in this case if
+the value passed to `where()`. So, in this case, if
 `Logger.warn()` gets called, directly or indirectly, by method
 `AppLogic.handleRequest()` then the `PERMISSIONS` retrieved at point 3.
 will be value passed in the `where()` call at point 2.
@@ -332,8 +332,9 @@ It also means that the value retrieved by the `get()` call is specific
 to whichever thread is executing the methods. As with `ThreadLocal`, an
 `ExtentLocal` has an incarnation that is per thread.
 
-The first big difference is that the binding established by `where()` is only
-visible from the extent of the code called from `run()`. If a call to
+The first big difference between this example and the previous one
+is that the binding established by `where()` is only
+visible within the extent of the code called from `run()`. If a call to
 `PERMISSIONS.get()` was inserted after the call to `run()` an exception
 would be thrown because `PERMISSIONS` is no longer bound.
 
