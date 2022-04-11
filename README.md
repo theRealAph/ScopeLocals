@@ -272,14 +272,14 @@ their frames are called an _extent_. The frame for the current method
 mn is called the _top most frame_ of the extent. The frame for the
 given method m1 is called the _bottom most frame_ of the extent."
 
-(That is to say, m1's extent is the set of methods m1 invokes, and any
-methods invoked transitively by them.)
+That is to say, m1's extent is the set of methods m1 invokes, and any
+methods invoked transitively by them.
 
 The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
 that extent. The extent local is *bound* to the value.
                                    
-###  Example use Of Extent Local Variables
+###  Example Use Of Extent Local Variables
 
 The `ServerFramework` example described above can easily be rewritten to
 use class `ExtentLocal` instead of `ThreadLocal`.
