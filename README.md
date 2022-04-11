@@ -130,11 +130,12 @@ that is used when code sets or gets `PERMISSIONS`
 depends on the thread which is executing the code.
 
 Using a `ThreadLocal` here avoids the need to pass a `Permissions` object as
-an argument to calls from the service handler through the business logic code
-and into the database driver or logger code. The declaration at 1. include an
-initialization that creates a `ThreadLocal` object and assigns it to field
-`PERMISSIONS`. Each server thread that handles an incoming request still needs
-to call the `set()` method at 2. This ensures that the incarnation of field
+an argument to calls from the service handler through the business logic
+and into the database driver or logger.
+
+The declaration at 1. creates a `ThreadLocal` object and assigns it to static field
+`PERMISSIONS`. Before it can be used the server thread needs to call the `set()`
+method at 2. This ensures that the incarnation of field
 `PERMISSIONS` specific to the handler thread identifies the right permissions
 for that request. The server is now ready to execute the business logic.
 
