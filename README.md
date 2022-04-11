@@ -142,7 +142,7 @@ for that request. The server is now ready to execute the business logic.
 The logger and database components call the `get()` method at 3. and 5. to
 retrieve the permissions for the current thread. They ensure that the
 operation requested by the business logic is permitted before proceeding
-to execute it at 5. and 6. 
+to execute it at 4. and 6. 
 
 This example demonstrates that `ThreadLocal`s can be used to implement the
 behaviour needed for this case. However, there are problems with their design
