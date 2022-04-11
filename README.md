@@ -407,10 +407,7 @@ resources block.
 
 Inside the `for` loop at 6. a virtual thread is forked to run the handler on
 each `DBRow`. After the loop at 7. a call to `join()` ensures that all the
-rows have been processed before the try block is exited. The `join()` call
-is not strictly needed. When the `try` block is exited the `StructuredExcutor`
-`close()` method gets called, ensuring that all forked virtual threads are
-joined before it completes.
+rows have been processed before the try block is exited.
 
 Rebinding ensures that the callback can only access the behaviour provided
 by the `Logger` API. The handler call at 6. is in the extent of the `run()`.
