@@ -22,11 +22,11 @@ number of child threads. This usage especially applies to virtual threads.
 
 It is not a goal to change the Java Programming Language.
 
-It is not a goal for this new programming model to require use
-of interface `AutoCloseable`.
-
 It is not a goal to require migration away from thread local
 variables.
+
+It is not a goal for this new programming model to require use
+of interface `AutoCloseable`.
 
 ## Motivation
 
