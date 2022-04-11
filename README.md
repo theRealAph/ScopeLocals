@@ -161,11 +161,11 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   driver threw an exception while performing some completely unrelated
   aspect of the business logic.
 
-  In the example, what is really needed is a simple, one-way broadcast
-  with a single point of assignment in a caller (at 1.) and multiple
+  In our example, what is really needed is a simple, one-way broadcast
+  with a single point of assignment in a caller (at 2.) and multiple
   points in called code where the data is consumed (at 3. and 5.).
-  This is a very common use case and it is not supported well by the
-  more complex API that `ThreadLocal` implements.
+  This is a very common pattern and it is not supported well by the
+  complex API of `ThreadLocal`.
 
   `ThreadLocal` was specified to provide unconstrained mutability in order to
   support a much more general model of communication. Data is able to flow in
