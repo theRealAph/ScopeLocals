@@ -75,6 +75,10 @@ Developers traditionally turn to `ThreadLocal` in situations like this. It
 provides developers with an independent variable for each thread to
 share their own copy of data.
 
+The following example shows a server implemented by a server framework
+class, a logger and a database driver. It uses a `ThreadLocal` to communicate
+permissions from the server framework to the logger and database components.   
+
     class ServerFramework {
       // 1. Provide a per-thread channel betwen the framework and its components
       final static ThreadLocal<Permissions> PERMISSIONS = ...;
