@@ -69,7 +69,7 @@ call to `DBPool.newConnection()` to proceed.
     AppLogic.handleRequest()                 |       |          AppLogic.handleRequest()
     ServerFrameWork.processRequest() :  set -+       +---- set  ServerFrameWork.processRequest()
      
-### Current Capabilities
+### Currently Supported Options
 
 Developers traditionally turn to `ThreadLocal` in situations like this. It
 provides developers with an independent variable for each thread to
