@@ -211,7 +211,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
 To sum up, `ThreadLocal` offers more complexity than is needed by many applications
 and comes with some significant costs.
 
-### Complications Due to Virtual Threads
+### Mismatch with Virtual Threads
 
 The above problems with thread local variables have become more pressing
 in the context of virtual threads. These threads are cheap and plentiful, unlike
