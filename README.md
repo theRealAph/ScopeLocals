@@ -77,10 +77,10 @@ share their own copy of data.
 
 The following example shows a server implemented by a server framework
 class, a logger and a database driver. It uses a `ThreadLocal` to communicate
-permissions from the server framework to the logger and database components.   
+`Permissions` from the server framework to the logger and database components.   
 
     class ServerFramework {
-      // 1. Provide a per-thread channel betwen the framework and its components
+      // 1. Provide a per-thread channel between the framework and its components
       final static ThreadLocal<Permissions> PERMISSIONS = ...;
       ...
       void processRequest(Request request, Response response) {
@@ -123,8 +123,8 @@ permissions from the server framework to the logger and database components.
 The `ThreadLocal` declared at 1. in static field `PERMISSIONS` provides a
 way to ensure that each thread handling a request can have its own independent
 permissions. A `ThreadLocal` serves as a key that is used to look up
-a `PermissionImpl` value for the current thread. So, there is _not_ exactly one
-incarnation of the field shared across all instances of Foo; instead, there are
+a `Permission` value for the current thread. So, there is not exactly _one_
+incarnation of field `PERMISSIONS` shared across all instances of Foo; instead, there are
 _multiple_ incarnations of the field, one per thread, and the incarnation of
 `PERMISSIONS` that is used when code performs sets or gets the `ThreadLocal`
 depends on the thread which is executing the code.
