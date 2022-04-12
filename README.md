@@ -472,7 +472,7 @@ thread can reference the set of bindings established by the forking thread
 without needing its own local copy.
 
 It is also worth noting that the fork/join model offered by `StructuredExecutor`
-means that a value bound in a call to to `where()` has a determinate lifetime,
+means that a value bound in the call to to `where()` has a determinate lifetime,
 as far as visibility via the `ExtentLocal` is concerned. The `Permission`
 object is available while the child thread is running. The call to `join()`
 at the end of the try block ensures that child threads can no longer be using
