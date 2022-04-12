@@ -385,7 +385,7 @@ The code for method `detail()` is shown below
         write(logFile, "DETAIL : %s %s".format(timeStamp(), message));
         ...
 
-The method includes a permission check at point 1. to ensure that logging
+This method includes a permission check at point 1. to ensure that logging
 is permitted. This is followed by a check of the log level at 2., returning
 if `DETAIL` logging is disabled. At point 3. an empty `Permissions` instance
 is obtained. At point 4. `where()` rebinds extent-local `PERMISSIONS`
