@@ -363,8 +363,8 @@ get called by a thread which has multiple permissions, not just the
 `LOG` permission needed to allow logging. However, when `detail()`
 calls `formatter.get()` the called code is only expected to do text
 processing. It should not need to do any work that requires permissions.
-It would be better if extent local `PERMISSIONS` was bound to an empty
-`Permissions` instance for the extent of the `get()` call.
+It would be ideal if the extent local variable `PERMISSIONS` was bound
+to an empty `Permissions` instance for the extent of the `get()` call.
 
 The code for method `detail()` is shown below
 
