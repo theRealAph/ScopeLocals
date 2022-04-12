@@ -399,9 +399,8 @@ Notice that this example uses the paired `ExtentLocal` methods `where()` and `ca
 whereas the previous example used `where()` and `run()`. That is because in
 this example the code executed below `call()` needs to return a result. 
 The `String` returned by `formatter.get()` is returned from `call()` and used to
-bind local variable `message`. `call()` must be used when lambda returns a result
-which is needed by the caller. `run()` is used when the lambda does not return a
-result or its result should be ignored.
+bind local variable `message`. `call()` must be passed an argument that returns a
+result. `run()` must be passed an argument that does not return a result.
 
 ###  Inheritance of Extent Local Variables
 
