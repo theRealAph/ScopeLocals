@@ -406,15 +406,14 @@ result. `run()` must be passed an argument that does not return a result.
 
 There are occasions where it would be useful for an `ExtentLocal`
 to be inherited from parent thread to child thread, for much the same
-reasons as it is useful to inherit a `ThreadLocal`. This is possible
-although it works in a way that avoids many of the problems that arise
-when using `ThreadLocal`.
+reasons as it is useful to inherit a `ThreadLocal`. This works with
+`ExtentLocal` variables in a way that avoids many of the problems that
+arise when using a `ThreadLocal`.
 
 An example use of inheritance is provided by API method `processQuery` of
 class `DBDriver`.
 
     public void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
-
 
 Method `processQuery` runs a `query` against the database retrieving a
 list of results of type `DBRow`.  Argument `rowHandler` is a callback
