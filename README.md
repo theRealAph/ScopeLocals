@@ -339,32 +339,32 @@ to change the binding established at point 1.
 
 ###  Rebinding of Extent Local Variables
 
-The immutability of `ExtentLocal` bindings means that within a thread a
-caller can use an `ExtentLocal` to reliably communicate a constant value to the methods it calls.
+The immutability of `ExtentLocal` bindings means that a caller can  use
+an `ExtentLocal` to reliably communicate a constant value to the methods it calls.
 However, there are times when one of those called methods might
 need to use the same `ExtentLocal` variable to communicate a different
 value to the methods *it* calls. The
 requirement is not to change the original binding but to establish a new
 binding for nested calls.
                      
-As an example consider another API method of class `Logger`.
+As an example consider a second API method of class `Logger`.
 
       void detail(Supplier<String> formatter);
 
 This method formats and prints a detailed log message when
 `DETAIL` level logging is enabled. If a lower level is enabled
 then it prints nothing. The caller passes in a `Supplier` argument
-whose `get()` method is invoked by `detail()` to generate the message
-text. Using a `Supplier` avoids the cost of formatting if DETAIL
+whose `get()` method is called by `detail()` to retrieve the message
+text. Using a `Supplier` avoids the cost of formatting when `DETAIL`
 logging is disabled.
 
-`detail()` is a good candidate for use of rebinding. It may
-get called by a thread with many permissions, not just the `LOG`
-permission. When `detail()` calls `formatter.get()` the called
-code is only expected to do text processing. It should not need
-to do any work that requires permissions. It would be better if
-extent local `PERMISSIONS` was bound to an empty `Permissions`
-instance for the extent of the `get()` call.
+`detail()` is a good candidate for the use of rebinding. It may
+get called by a thread which has multiple permissions, not just the
+`LOG` permission needed to allow logging. However, when `detail()`
+calls `formatter.get()` the called code is only expected to do text
+processing. It should not need to do any work that requires permissions.
+It would be better if extent local `PERMISSIONS` was bound to an empty
+`Permissions` instance for the extent of the `get()` call.
 
 The code for method `detail()` is shown below
 
@@ -390,11 +390,10 @@ is permitted. This is followed by a check of the log level at 2., returning
 if `DETAIIL` logging is disabled. At point 3. an empty `Permissions` instance
 is obtained. The call to `where()` at 4 rebinds extent-local `PERMISSIONS`
 to this empty `Permissions` instance for the extent of the `call()` that
-follows it. The lambda passed as argument to `call()` calls the `get()`
-method of the `Supplier` argument `formatter` returning the resulting
-formatted message. If any code called from get tries to use one of the
-component services the service will `get()` the empty `Permission`
-instance and throw a `PermissionException`.
+follows it. The lambda passed as argument to `call()` calls `formatter.get()`
+to retrieve the formatted message. If code called from `formatter.get()` tries
+to use a component service the permissions check in the service code will retrieve
+the empty `Permission` instance, leading to a `PermissionException`.
 
 Notice that this example relies on `ExtentLocal` methods `where()` and `call()`
 while the previous example used `where()` and `run()`. That is because in
