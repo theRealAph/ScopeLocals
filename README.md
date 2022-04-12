@@ -388,7 +388,7 @@ The code for method `detail()` is shown below
 The method includes a permission check at point 1. to ensure that logging
 is permitted. This is followed by a check of the log level at 2., returning
 if `DETAIL` logging is disabled. At point 3. an empty `Permissions` instance
-is obtained. `where()` at 4 rebinds extent-local `PERMISSIONS`
+is obtained. At point 4. `where()` rebinds extent-local `PERMISSIONS`
 to this empty `Permissions` instance for the extent of the `call()` that
 follows it. The lambda passed as argument to `call()` invokes `formatter.get()`
 to retrieve the formatted message. If code called from `formatter.get()` tries
