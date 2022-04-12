@@ -416,8 +416,8 @@ class `DBDriver`.
     public void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
 
 Method `processQuery` runs a `query` against the database ,retrieving a
-list of results of type `DBRow`.  Argument `rowHandler` is a method
-of type `Consumer<DBRow>`. That means it can be applied to each result by
+list of results of type `DBRow`.  Argument `rowHandler` has type
+`Consumer<DBRow>`. That means it can be applied to each result by
 calling `rowHandler.apply(row)`. In order to speed up processing of query
 results each call to `apply` is executed in its own virtual thread.
 
