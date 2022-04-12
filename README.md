@@ -460,7 +460,7 @@ all the forked virtual threads have completed. This ensures that all rows
 have been processed before the try block is exited.
 
 There is one important detail in the `processQuery` code that still needs
-explaining. The callback to `rowHandler.apply()` happens in a forked
+explaining. The call to `rowHandler.apply()` happens in a forked
 virtualThread(). So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
 class `ExtentLocal` has been designed to share bindings across thread forks.
