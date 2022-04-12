@@ -59,7 +59,7 @@ in Thread 1 and read by `DBDriver.open()` include permission to access the datab
 permitting the call to `DBPool.newConnection()` to proceed. The permissions set in
 Thread 2 do not include that permission so an `InvalidPermissionException` is thrown.
  
-    Thread 1                                             Thread 2
+    Thread 1                                           Thread 2
 
     DBPool.newConnection()                             InvalidPermissionException() 
     DBDriver.open() ---- get ----------------+         DBDriver.open() ---- get ----------------+
