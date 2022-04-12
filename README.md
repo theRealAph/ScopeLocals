@@ -349,7 +349,7 @@ binding for nested calls.
                      
 As an example consider a second API method of class `Logger`.
 
-      void detail(Supplier<String> formatter);
+    public void detail(Supplier<String> formatter);
 
 This method formats and prints a detailed log message when
 `DETAIL` level logging is enabled. If a lower level is enabled
@@ -373,7 +373,7 @@ The code for method `detail()` is shown below
       void detail(Supplier<String> formatter) {
         // 1. Get permissions for request thread and check  
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG) throw new PermissionException();
+        if (!permissions.allowed(LOG)) throw new PermissionException();
         // 2. Only print the message if needed
         if (logLevel < DETAIL) return;
         // 3. Obtain an empty permissions instance 
@@ -387,7 +387,7 @@ The code for method `detail()` is shown below
 
 The method includes a permission check at point 1. to ensure that logging
 is permitted. This is followed by a check of the log level at 2., returning
-if `DETAIIL` logging is disabled. At point 3. an empty `Permissions` instance
+if `DETAIL` logging is disabled. At point 3. an empty `Permissions` instance
 is obtained. The call to `where()` at 4 rebinds extent-local `PERMISSIONS`
 to this empty `Permissions` instance for the extent of the `call()` that
 follows it. The lambda passed as argument to `call()` calls `formatter.get()`
@@ -414,7 +414,7 @@ when using `ThreadLocal`.
 An example use of inheritance is provided by API method `processQuery` of
 class `DBDriver`.
 
-    void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
+    public void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
 
 
 Method `processQuery` runs a `query` against the database retrieving a
