@@ -395,7 +395,7 @@ to retrieve the formatted message. If code called from `formatter.get()` tries
 to use a component service, the permissions check in the service code will retrieve
 the empty `Permission` instance, leading to a `PermissionException`.
 
-Notice that this example uses the paired `ExtentLocal` methods `where()` and `call()`,
+Notice that this example uses the paired methods `where()` and `call()`,
 whereas the previous example used `where()` and `run()`. That is because in
 this example the code executed below `call()` needs to return a result. 
 The `String` returned by `formatter.get()` is returned from `call()` and used to
