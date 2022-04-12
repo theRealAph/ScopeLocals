@@ -60,14 +60,14 @@ an `InvalidPermissionException` is thrown. The permissions set in Thread 2 permi
 call to `DBPool.newConnection()` to proceed.
 [n.b. swap order of succeed an fail threads]
     
-    Thread 1                               ...                  Thread 2
+                      Thread 1                                             Thread 2
 
-    InvalidPermissionException()                                DBPool.newConnection() 
-    DBDriver.open()   get  <-----------------+       +---> get  DBDriver.open()
-    ...                                      |       |          ...
-    ...                              PERMISSIONS   PERMISSIONS  ...                     
-    AppLogic.handleRequest()                 |       |          AppLogic.handleRequest()
-    ServerFrameWork.processRequest() :  set -+       +---- set  ServerFrameWork.processRequest()
+                      DBPool.newConnection()                               InvalidPermissionException() 
+         +---> get :  DBDriver.open()                        +---> get :   DBDriver.open()
+         |            ...                                    |             ...
+    PERMISSIONS       ...                               PERMISSIONS        ...                     
+         |            AppLogic.handleRequest()               |             AppLogic.handleRequest()
+         +---- set :  ServerFrameWork.processRequest()       +---- set  :  ServerFrameWork.processRequest()
      
 ### Currently Supported Options
 
