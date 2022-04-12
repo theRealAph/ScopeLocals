@@ -378,7 +378,7 @@ The code for method `detail()` is shown below
         if (logLevel < DETAIL) return;
         // 3. Obtain an empty permissions instance 
         Permissions nopermission = Permissions.none();
-        // 4. Rebind permissions for extent of formatter call
+        // 4. Rebind PERMISSIONS for extent of formatter call
         String message = ExtentLocal.where(ServerFramework.PERMISSIONS, nopermission)
                                   .call(() -> formatter.get());
         // 5. Print the formatted message
