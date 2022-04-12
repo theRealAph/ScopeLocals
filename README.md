@@ -395,17 +395,13 @@ to retrieve the formatted message. If code called from `formatter.get()` tries
 to use a component service the permissions check in the service code will retrieve
 the empty `Permission` instance, leading to a `PermissionException`.
 
-Notice that this example relies on `ExtentLocal` methods `where()` and `call()`
+Notice that this example uses the paired `ExtentLocal` methods `where()` and `call()`
 while the previous example used `where()` and `run()`. That is because in
-this example the code executed below `call()` needs to return a result,
-the `String` returned by `formatter.get()`. Method `run()` is used when
-the lambda passed as argument should not return a result, as in the
-previous example.
-
-
-As an example consider this new method of the `DBDriver` class from the
-`ServerFramework` example.
-
+this example the code executed below `call()` needs to return a result. 
+The `String` returned by `formatter.get()` is returned from `call()` and used to
+bind local variable `message`. `call()` must be used when lambda returns a result
+which is needed by the caller. `run()` is used when the lambda does not return a
+result or its result should be ignored.
 
 ###  Inheritance of Extent Local Variables
 
@@ -425,13 +421,13 @@ Method `processQuery` runs a `query` against the database retrieving a
 list of results of type `DBRow`.  Argument `rowHandler` is a callback
 of type `Consumer<DBRow>`. That means it can be applied to each result by
 calling `rowHandler.apply(row)`. In order to speed up processing of query
-results each call to `apply` is executed in its own virtual thread. If
-a problem occurs then the handler code will need to use the `Logger` to
-log an error message. So, the binding of `PERMISSIONS` for the caller
-thread really needs to be inherited by the child virtual thread that
+results each call to `apply` is executed in its own virtual thread.
+
+If a problem occurs for some `DBRow` then the handler code will need to use
+the `Logger` to log an error message. So, the binding of `PERMISSIONS` for
+the caller thread really needs to be inherited by the child virtual thread that
 executes the handler. This happens automatically because the implementation
-of `processQuery` uses the structured execution framework provided as part
-of the virtual threads implementation.
+of `processQuery` uses the structured execution framework.
 
 The code for method `processQuery` is provided below.
 
@@ -465,8 +461,8 @@ the current `DBRow`. After the for loop at 5. a call to `join()` ensures that
 all the forked virtual threads have completed. This ensures that all rows
 have been processed before the try block is exited.
 
-There is still an important detail in the `processQuery` code that needs
-highlighing. The callback to `rowHandler.apply()` happens in a forked
+There is one important detail in the `processQuery` code that still needs
+explaining. The callback to `rowHandler.apply()` happens in a forked
 virtualThread(). So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
 class `StructuredExecutor` has been designed to share `ExtentLocal` bindings
@@ -481,8 +477,8 @@ It is also worth noting that the fork/join model offered by `StructuredExecutor`
 means that a value bound in a call to to `where()` has a determinate lifetime,
 as far as visibility via the `ExtentLocal` is concerned. The `Permission`
 object is available while the child thread is running. The call to `join()`
-at the end of the try block means that forking thread can be sure child
-threads can no longer be using it.
+at the end of the try block ensures that child threads can no longer be using
+it.
 
 Using class StructuredExceutor to parallelise row processing means that query
 results returning thousands or even millions of rows can be executed in
