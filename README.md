@@ -62,11 +62,11 @@ Thread 2 do not include that permission so an `InvalidPermissionException` is th
     Thread 1                                             Thread 2
 
     DBPool.newConnection()                               InvalidPermissionException() 
-    DBDriver.open()  :  get -------------------+         DBDriver.open()  :  get -------------------+
-    ...                                        |         ...                                        |
-    ...                                   PERMISSIONS    ...                                    PERMISSIONS                      
-    AppLogic.handleRequest()                   |         AppLogic.handleRequest()                   |
-    ServerFrameWork.processRequest()  :  set --+         ServerFrameWork.processRequest()  :  set --+
+    DBDriver.open() ---- get ----------------+         DBDriver.open() ---- get ----------------+
+    ...                                      |         ...                                      |
+    ...                                 PERMISSIONS    ...                                  PERMISSIONS                      
+    AppLogic.handleRequest()                 |         AppLogic.handleRequest()                 |
+    ServerFrameWork.processRequest() - set --+         ServerFrameWork.processRequest() - set --+
      
 ### Currently Supported Options
 
