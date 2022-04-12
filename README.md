@@ -97,9 +97,7 @@ class, a logger and a database driver. It uses a `ThreadLocal` to communicate
       void warn(String message)  throws PermissionException {
         // 3. Get permissions for request thread and check  
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG) {
-          throw new PermissionException(...)
-        }
+        if (!permissions.allowed(LOG)  throw new PermissionException();
         // 4. Ok to write the warning
         write(logFile, "WARNING : %s %s".format(timeStamp(), message));
       }
@@ -110,9 +108,7 @@ class, a logger and a database driver. It uses a `ThreadLocal` to communicate
       DBConnection open(...) throws PermissionException {
         // 5. Get permissions for request thread and check
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(DATABASE) {
-          throw new  PermissionException(...)
-        }
+        if (!permissions.allowed(DATABASE) throw new  PermissionException();
         // 6. Ok to connect to a database
         return DBPool.newConnection(...);
       }
@@ -302,9 +298,7 @@ use class `ExtentLocal` instead of `ThreadLocal`.
       void warn(String message)  throws PermissionException {
         // 3. Get permissions for request thread and check  
         Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG) {
-          throw new PermissionException(...)
-        }
+        if (!permissions.allowed(LOG)  throw new PermissionException();
         // 4. Ok to write the warning
         write(logFile, "WARNING : %s %s".format(timeStamp(), message));
       }
@@ -352,77 +346,129 @@ need to use the same `ExtentLocal` variable to communicate a different
 value to the methods *it* calls. The
 requirement is not to change the original binding but to establish a new
 binding for nested calls.
+                     
+As an example consider another API method of class `Logger`.
+
+      void detail(Supplier<String> formatter);
+
+This method formats and prints a detailed log message when
+`DETAIL` level logging is enabled. If a lower level is enabled
+then it prints nothing. The caller passes in a `Supplier` argument
+whose `get()` method is invoked by `detail()` to generate the message
+text. Using a `Supplier` avoids the cost of formatting if DETAIL
+logging is disabled.
+
+`detail()` is a good candidate for use of rebinding. It may
+get called by a thread with many permissions, not just the `LOG`
+permission. When `detail()` calls `formatter.get()` the called
+code is only expected to do text processing. It should not need
+to do any work that requires permissions. It would be better if
+extent local `PERMISSIONS` was bound to an empty `Permissions`
+instance for the extent of the `get()` call.
+
+The code for method `detail()` is shown below
+
+    class Logger {
+      ...
+      void detail(Supplier<String> formatter) {
+        // 1. Get permissions for request thread and check  
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (!permissions.allowed(LOG) throw new PermissionException();
+        // 2. Only print the message if needed
+        if (logLevel < DETAIL) return;
+        // 3. Obtain an empty permissions instance 
+        Permissions nopermission = Permissions.none();
+        // 4. Rebind permissions for extent of formatter call
+        String message = ExtentLocal.where(ServerFramework.PERMISSIONS, nopermission)
+                                  .call(() -> formatter.get());
+        // 5. Print the formatted message
+        write(logFile, "DETAIL : %s %s".format(timeStamp(), message));
+        ...
+
+The method includes a permission check at point 1. to ensure that logging
+is permitted. This is followed by a check of the log level at 2., returning
+if `DETAIIL` logging is disabled. At point 3. an empty `Permissions` instance
+is obtained. The call to `where()` at 4 rebinds extent-local `PERMISSIONS`
+to this empty `Permissions` instance for the extent of the `call()` that
+follows it. The lambda passed as argument to `call()` calls the `get()`
+method of the `Supplier` argument `formatter` returning the resulting
+formatted message. If any code called from get tries to use one of the
+component services the service will `get()` the empty `Permission`
+instance and throw a `PermissionException`.
+
+Notice that this example relies on `ExtentLocal` methods `where()` and `call()`
+while the previous example used `where()` and `run()`. That is because in
+this example the code executed below `call()` needs to return a result,
+the `String` returned by `formatter.get()`. Method `run()` is used when
+the lambda passed as argument should not return a result, as in the
+previous example.
+
 
 As an example consider this new method of the `DBDriver` class from the
 `ServerFramework` example.
 
-    class Database {
-      void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
-        // 1. Get permissions for request thread and check 
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(DATABASE) {
-          throw new  InvalidAccessException(...)
-        }
-        // 2. Run the database query
-        List<DBRow> rows = executeQuery(query);
-        // 3. Reduce permissions to LOG only
-        Permissions reduced = permissions.restrict(LOG);
-        // 4. Rebind PERMISSIONS
-        ExtentLocal.where(ServerFramework.PERMISSIONS, reduced)
-                 .run(() -> 
-                     // 5. Parallelize with a fork join executor 
-                     try (var s = StructuredExecutor.open()) {
-                       for (var row : rows) {
-                         // 6. process each row in its own virtual thread
-                         s.fork(() -> rowHandler.apply(row));
-                       }
-                       // 7. wait for all virtual threads to complete
-                       s.join();
-                     }
-                 });
-      }
-
-Method `processQuery` runs a `query` against the database to retrieve a
-list of results of type `DBRow`.  Argument `rowHandler` is a callback
-of type `Consumer<DBRow>`. That means it can be applied to each result by
-calling `rowHandler.apply(row)`.  In order to speed up processing of query
-results each call to `apply` is executed in its own virtual thread. The
-handler needs to be able to log messages but should not attempt to perform
-any further database processing. If a virtual thread needs to wait for a
-log write to complete another virtual thread will be resumed, allowing
-the application to make progress.
-
-The first thing `processQuery` does at 1. is ensure the caller has
-the `DATABASE` permission before proceeding to run the query at 2. At 3. it
-uses method `restrict` to construct a weaker Permissions object which
-removes everything except the `LOG` permission. The call to `where()` at
-4 rebinds `PERMISSIONS` to this weaker set of `Permission`s for the extent
-of the following `run()` call.
-
-The example employs a new class `StructuredExecutor` to create and manage
-the virtual threads. The try at 5. in the lambda passed to `run()` opens
-a `StructuredExecutor`. which manages collections of virtual threads using
-a fork join model. It gets automatically closed at the end of the try with
-resources block.
-
-Inside the `for` loop at 6. a virtual thread is forked to run the handler on
-each `DBRow`. After the loop at 7. a call to `join()` ensures that all the
-rows have been processed before the try block is exited.
-
-Rebinding ensures that the callback can only access the behaviour provided
-by the `Logger` API. The handler call at 6. is in the extent of the `run()`.
-If the handler tries to call a `DBDriver` API method that method will call
-`PERMISSIONS.get()`, retrieving the weaker `Permissions` which does not
-include `DATABASE`. The rebinding is only local to the `run()` call at 4.
-A call to `PERMISSIONS.get()` after the `run()` call completes will still
-see the original binding established by the `ServerFranework`.
 
 ###  Inheritance of Extent Local Variables
 
-There is one important detail in the `processQuery` code that needs
-highlighing. Rebinding of `PERMISSIONS` at 4. happens in the thread that
-calls `processQuery`. However, the callback to `rowHandler.apply()` happens
-in a forked virtualThread(). How does the `get()` in the forked thread
+There are occasions where it would be useful for an `ExtentLocal`
+to be inherited from parent thread to child thread, for much the same
+reasons as it is useful to inherit a `ThreadLocal`. This is possible
+although it works in a way that avoids many of the problems that arise
+when using `ThreadLocal`.
+
+An example use of inheritance is provided by API method `processQuery` of
+class `DBDriver`.
+
+    void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
+
+
+Method `processQuery` runs a `query` against the database retrieving a
+list of results of type `DBRow`.  Argument `rowHandler` is a callback
+of type `Consumer<DBRow>`. That means it can be applied to each result by
+calling `rowHandler.apply(row)`. In order to speed up processing of query
+results each call to `apply` is executed in its own virtual thread. If
+a problem occurs then the handler code will need to use the `Logger` to
+log an error message. So, the binding of `PERMISSIONS` for the caller
+thread really needs to be inherited by the child virtual thread that
+executes the handler. This happens automatically because the implementation
+of `processQuery` uses the structured execution framework provided as part
+of the virtual threads implementation.
+
+The code for method `processQuery` is provided below.
+
+      void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
+        // 1. Get permissions for request thread and check 
+        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        if (!permissions.allowed(DATABASE) throw new  InvalidAccessException();
+        // 2. Run the database query
+        List<DBRow> rows = executeQuery(query);
+        / 3. Parallelize handler with a structured fork join executor 
+        try (var s = StructuredExecutor.open()) {
+          for (var row : rows) {
+            // 4. process each row in its own virtual thread
+            s.fork(() -> rowHandler.apply(row));
+          }
+          // 5. wait for all virtual threads to complete
+          s.join();
+        }
+      }
+
+The first thing `processQuery` does at 1. is ensure the caller has
+the `DATABASE` permission before proceeding to run a query against
+the database at 2. The try with resources at 3. opens a `StructuredExecutor`.
+This is a class provided as part of the virtual threads implementation
+which allows a collections of virtual threads to be managed using a fork
+join model. It gets automatically closed at the end of the try with
+resources block.
+
+Inside the `for` loop at 4. a virtual thread is forked to run the handler on
+the current `DBRow`. After the for loop at 5. a call to `join()` ensures that
+all the forked virtual threads have completed. This ensures that all rows
+have been processed before the try block is exited.
+
+There is still an important detail in the `processQuery` code that needs
+highlighing. The callback to `rowHandler.apply()` happens in a forked
+virtualThread(). So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
 class `StructuredExecutor` has been designed to share `ExtentLocal` bindings
 across fork calls. Any `ExtentLocal` bindings present in the thread that calls
@@ -434,10 +480,10 @@ thread without having to be copied.
 
 It is also worth noting that the fork/join model offered by `StructuredExecutor`
 means that a value bound in a call to to `where()` has a determinate lifetime,
-as far as visibility via the `ExtentLocal` is concerned. The reduced
-`Permission` object created at 3. is available for the extent of the
-`run()` call at 4. Once that call returns the current thread and its child
-threads will no longer need to make use of it.
+as far as visibility via the `ExtentLocal` is concerned. The `Permission`
+object is available while the child thread is running. The call to `join()`
+at the end of the try block means that forking thread can be sure child
+threads can no longer be using it.
 
 Using class StructuredExceutor to parallelise row processing means that query
 results returning thousands or even millions of rows can be executed in
@@ -526,7 +572,7 @@ http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/co
 ## Alternatives
 
 It is possible to emulate many of the features of extent locals with
-`ThreadLocal`s, albeit at some cost in memory footprint, runtime
+`ThreadLocal`s, albeit at some cost in memory footprint,
 security, and performance.
 
 We have experimented with a modified version of `ThreadLocal` that
