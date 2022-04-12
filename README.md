@@ -478,7 +478,7 @@ object is available while the child thread is running. The call to `join()`
 at the end of the try block ensures that child threads can no longer be using
 it.
 
-Using class StructuredExceutor to parallelise row processing means that query
+Using class StructuredExecutor to parallelise row processing means that query
 results returning thousands or even millions of rows can be executed in
 parallel. If a call to `rowHandler` needs to block, say to log a warning to
 a file on disk, work can continue by switching execution to another virtual
