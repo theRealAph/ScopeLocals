@@ -419,7 +419,7 @@ Method `processQuery` runs a `query` against the database ,retrieving a
 list of results of type `DBRow`.  Argument `rowHandler` has type
 `Consumer<DBRow>`. That means it can be applied to each result by
 calling `rowHandler.apply(row)`. In order to speed up processing of query
-results each call to `apply` is executed in its own virtual thread.
+results, each call to `apply` is executed in its own virtual thread.
 
 If a problem occurs for some `DBRow` then the handler code will need to use
 the `Logger` to log an error message. So, the binding of `PERMISSIONS` for
@@ -463,9 +463,9 @@ There is one important detail in the `processQuery` code that still needs
 explaining. The callback to `rowHandler.apply()` happens in a forked
 virtualThread(). So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
-class `StructuredExecutor` has been designed to share `ExtentLocal` bindings
-across fork calls. Any `ExtentLocal` bindings present in the thread that calls
-`fork()` will be visible to the forked virtual thread.
+class `ExtentLocal` has been designed to share bindings across thread forks.
+Any `ExtentLocal` bindings present in the thread that calls `fork()` will be
+visible to the forked virtual thread.
 
 It is worth emphasising that these bindings really are *shared*. The set of
 bindings established by the forking thread can be referenced by the forked
