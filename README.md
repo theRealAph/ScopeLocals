@@ -465,7 +465,7 @@ virtualThread(). So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
 class `ExtentLocal` has been designed to share bindings across thread forks.
 Any `ExtentLocal` bindings present in the thread that calls `fork()` will be
-visible to the forked virtual thread.
+visible to the forked thread.
 
 It is worth emphasising that these bindings really are *shared*. The set of
 bindings established by the forking thread can be referenced by the forked
