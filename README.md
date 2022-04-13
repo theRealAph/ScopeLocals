@@ -82,7 +82,7 @@ share their own copy of data.
 The following example shows how a `Server` implementation might use a 
 `ThreadLocal` to communicate `Permissions` from the server to the database.
 `Server.processRequest()` and `DBDriver.open()` implement the methods
-invoked at calls 1 and 7 in thread call stack diagram above.
+invoked at 1. and 7. in the thread call stack diagram above.
 
     class Server {
       // 1. Provide a per-thread channel between the framework and its components
@@ -124,7 +124,7 @@ an argument to calls from the service handler through the business logic
 and into the database driver or logger.
 
 The declaration at 1. creates a `ThreadLocal` object and assigns it to static field
-`PERMISSIONS`. Before it can be used the ``Server` handler thread needs to call the `set()`
+`PERMISSIONS`. Before it can be used the `Server` handler thread needs to call the `set()`
 method at 2. This ensures that the incarnation of field
 `PERMISSIONS` specific to the handler thread identifies the right permissions
 for that request. The server is now ready to execute the business logic.
