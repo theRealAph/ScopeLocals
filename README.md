@@ -150,19 +150,19 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   the error would only appear the next time the business logic tried to
   perform a database operation.
 
-  In our example, what is really needed is a simple, one-way broadcast
-  with a single point of assignment in a caller (at 2.) and one or more
-  clear points in called code where the data is consumed (e.g. at 3.).
-  This is a very common pattern, and it is not supported well by the
-  complex API of `ThreadLocal`.
-
   `ThreadLocal` was _specified_ to provide unconstrained mutability in order to
   support a more general model of communication than we usually need. Data is able to flow in
   either direction between a caller and called method. This generality may be 
   needed for a few difficult cases. However, in the worst case, programming
   with thread local variables can lead to spaghetti-like dataflow. The result
   is code whose structure is hard to discern, let alone maintain.
-   
+
+  In our example, what is really needed is a simple, one-way broadcast
+  with a single point of assignment in a caller (at 2.) and one or more
+  clear points in called code where the data is consumed (e.g. at 3.).
+  This is a very common pattern, and it is not supported well by the
+  complex API of `ThreadLocal`.
+
 - *Unbounded Persistence* — Once set, a `ThreadLocal` is _persistent_: that is
   to say, the incarnation of the value for each thread that calls `set()` is retained
   for the lifetime of the thread, or until a method running on that thread
