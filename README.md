@@ -25,7 +25,7 @@ number of child threads. This usage especially applies to virtual threads.
 It is not a goal to change the Java Programming Language.
 
 It is not a goal to require migration away from thread local
-variables.
+variables or to deprecate the ThreadLocal API.
 
 It is not a goal for this new programming model to require use
 of interface `AutoCloseable`.
@@ -34,7 +34,7 @@ of interface `AutoCloseable`.
 
 Programs are usually built out of components that contribute independent,
 complementary functionality. For example, a networked server may combine
-business logic to handle service requests with components such as a database
+business logic to handle service requests with trusted components such as a database
 driver providing data persistence, and a logging framework that records
 progress or noteworthy events. Such server components often need to share data
 between themselves, independent from the business logic. For example, as a
@@ -48,25 +48,30 @@ in a case like this, where data needs to be pushed through
 business logic calls it simplifies the implementation if the server can share
 context with its components via some alternative channel. 
 
-The diagram below illustrates the sort of behaviour we would like. In this example
-there are two threads handling a request. Both attempt to open a database connection.
-Each thread needs its own independent permissions, so it also needs its own independent
-channel.
+The diagram below illustrates the sort of behaviour we would like. It shows the
+call stack for two different threads handling a server request. Each call stack
+begins with a call to `processRequest()` at call 1. It calls business logic method
+`handleRequest()` at call 2. The application logic eventually tries to open a
+database connection by calling `DBDriver.open()` at call 7. At this point `DBDriver`
+needs to decide whether the thread is permitted to access the database.
 
-`PERMISSIONS` acts as a direct, per-thread channel from the `ServerFramework` to the
-`DBDriver` server component. The permissions set from `ServerFrameWork.processRequest()`
-in Thread 1 and read by `DBDriver.open()` include permission to access the database,
-permitting the call to `DBPool.newConnection()` to proceed. The permissions set in
-Thread 2 do not include that permission so an `InvalidPermissionException` is thrown.
- 
-    Thread 1                                           Thread 2
+The requirement here is for `PERMISSIONS` to act as a direct, per-thread channel
+to pass a `Permission` instance from the `Server` in call 1 to the `DBDriver` in
+call 7. The value `set()` by Thread 1 in call 1 should be the value returned when
+Thread 1 performs a `get()` in call 7. Thread 2 must be able to `set()` and
+`get()` its own independent value. In the example, Thread 1's `Permission` object
+allows database access, so the `DBDriver` proceeds to call `newConnection()` at
+call 8. The `Permission` for Thread 2 disallows database access, so `DBDriver`
+creates and throws an `InvalidPermissionException`. 
 
-    DBPool.newConnection()                             InvalidPermissionException() 
-    DBDriver.open() ---- get ----------------+         DBDriver.open() ---- get ----------------+
-    ...                                      |         ...                                      |
-    ...                                PERMISSIONS     ...                                  PERMISSIONS                      
-    AppLogic.handleRequest()                 |         AppLogic.handleRequest()                 |
-    ServerFrameWork.processRequest() - set --+         ServerFrameWork.processRequest() - set --+
+    Thread 1                                  Thread 2
+
+    8. DBDriver.newConnection()               8. InvalidPermissionException() 
+    7. DBDriver.open() <-- get ---------+     7. DBDriver.open() <--- get --------+
+       ...                              |        ...                              |
+       ...                       PERMISSIONS     ...                      PERMISSIONS                      
+    2. AppLogic.handleRequest()         |     2. AppLogic.handleRequest()         |
+    1. Server.processRequest() -- set --+     1. Server.processRequest() -- set --+
      
 ### Currently Supported Options
 
@@ -74,16 +79,17 @@ Developers traditionally turn to `ThreadLocal` in situations like this. It
 provides developers with an independent variable for each thread to
 share their own copy of data.
 
-The following example shows a server implemented by a server framework
-class, a logger and a database driver. It uses a `ThreadLocal` to communicate
-`Permissions` from the server framework to the logger and database components.   
+The following example shows how a `Server` implementation might use a 
+`ThreadLocal` to communicate `Permissions` from the server to the database.
+`Server.processRequest()` and `DBDriver.open()` implement the methods
+invoked at calls 1 and 7 in thread call stack diagram above.
 
-    class ServerFramework {
+    class Server {
       // 1. Provide a per-thread channel between the framework and its components
       final static ThreadLocal<Permissions> PERMISSIONS = ...;
       ...
       void processRequest(Request request, Response response) {
-        int p = (request.isAdmin() ? LOG|DATABASE : LOG);
+        int p = (request.isAuthorized() ? DATABASE : NONE);
         Permissions permissions = new Permissions(p);
         // 2. Set permissions for request thread and run app logic
         PERMISSIONS.set(permissions);
@@ -92,24 +98,13 @@ class, a logger and a database driver. It uses a `ThreadLocal` to communicate
       ...
     }
 
-    class Logger {
-      void warn(String message)  throws PermissionException {
-        // 3. Get permissions for request thread and check  
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG)  throw new PermissionException();
-        // 4. Ok to write the warning
-        write(logFile, "WARNING : %s %s".format(timeStamp(), message));
-      }
-      ...
-    }
-
     class DBDriver {
       DBConnection open(...) throws PermissionException {
-        // 5. Get permissions for request thread and check
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        // 3. Get permissions for request thread and check
+        Permissions permissions = Server.PERMISSIONS.get();
         if (!permissions.allowed(DATABASE) throw new  PermissionException();
-        // 6. Ok to connect to a database
-        return DBPool.newConnection(...);
+        // 4. Ok to connect to a database
+        return DBDriver.newConnection(...);
       }
       ...
     }
@@ -129,15 +124,15 @@ an argument to calls from the service handler through the business logic
 and into the database driver or logger.
 
 The declaration at 1. creates a `ThreadLocal` object and assigns it to static field
-`PERMISSIONS`. Before it can be used the server thread needs to call the `set()`
+`PERMISSIONS`. Before it can be used the ``Server` handler thread needs to call the `set()`
 method at 2. This ensures that the incarnation of field
 `PERMISSIONS` specific to the handler thread identifies the right permissions
 for that request. The server is now ready to execute the business logic.
 
-The logger and database components call the `get()` method at 3. and 5. to
-retrieve the permissions for the current thread. They ensure that the
+The database driver calls the `get()` method at 3. to
+retrieve the permissions for the current thread. It ensures that the
 operation requested by the business logic is permitted before proceeding
-to execute it at 4. and 6. 
+to execute it at 4. 
 
 This example demonstrates that `ThreadLocal`s _can_ be used to implement the
 behaviour needed for this case. However, there are problems with the design
@@ -150,15 +145,14 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   buggy code can make it very difficult to identify where and in what
   order state will be read and updated.
  
-  Such problems are possible even with a well-defined API like the `ServerFramework`
-  example. If a Logger method accidentally reset the permissions to
-  only include `LOG`, an error would only appear when the database
-  driver threw an exception while performing some completely unrelated
-  aspect of the business logic.
+  Such problems are possible even with a well-defined API like the `Server`
+  example. If the `DBDriver` accidentally reset the permissions to NONE`
+  the error would only appear the next time the business logic tried to
+  perform a database operation.
 
   In our example, what is really needed is a simple, one-way broadcast
-  with a single point of assignment in a caller (at 2.) and multiple
-  points in called code where the data is consumed (at 3. and 5.).
+  with a single point of assignment in a caller (at 2.) and one or more
+  clear points in called code where the data is consumed (e.g. at 3.).
   This is a very common pattern, and it is not supported well by the
   complex API of `ThreadLocal`.
 
@@ -169,24 +163,25 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   with thread local variables can lead to spaghetti-like dataflow. The result
   is code whose structure is hard to discern, let alone maintain.
    
-- *Persistence* — Once set, a `ThreadLocal` is _persistent_: that is to say,
-  the incarnation of the value for each thread that calls `set()` is retained
+- *Unbounded Persistence* — Once set, a `ThreadLocal` is _persistent_: that is
+  to say, the incarnation of the value for each thread that calls `set()` is retained
   for the lifetime of the thread, or until a method running on that thread
-  calls `remove()`. This is not so much a problem of behaviour as one of
-  performance cost.
+  calls `remove()`.
 
-  It is unfortunately common for developers to forget to remove a `ThreadLocal`,
-  or even just to reset it to `null`.  Indeed, for programs that rely on the
+  Having to call `remove()` on a `ThreadLocal` to clean it up
+  when it's no longer in use means that it is all too easy for values to persist
+  longer than is desirable. It is unfortunately common for developers to forget
+  to remove a `ThreadLocal`.  Indeed, for programs that rely on the
   unconstrained mutability of `ThreadLocal`, there may be no clear point at
   which it is safe to call `remove()`. This can lead to a long-term memory
   leak. Even though the program may have long since moved on from having
   any use for an object referenced from the `ThreadLocal`, it will not be
   garbage collected unless the thread exits.
 
-  Having to call `remove()` on a `ThreadLocal` to clean it up when it's no
-  longer in use is somewhat antithetical to the way that Java usually works.
-  It would be better if the context associated with a thread were to be
-  cleaned up automatically.
+  Clearly, it would be better if sharing of data from `set()` and
+  `get()` calls could be achieved with a clearly determined lifetime,
+  limiting persistence of the data to a well-bounded interval during
+  execution of the thread.
 
 - *Inheritance* — The `ThreadLocal` persistence problem can be much worse
   when using large numbers of threads because`ThreadLocal`s may be inherited
@@ -270,16 +265,23 @@ given method m1 is called the _bottom most frame_ of the extent."
 That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.
 
+It should now be clear that the thread call stack diagram above is
+actually a picture of two separate extents for two different threads.
+In both cases the bottom frame of the extent is a call to method
+`Server.processRequest()`. In Thread 1 the top frame is a call to
+method `DBDriver.newConnection()` while in Thread 2 it is a call to
+constructor `InvalidPermissionException()`
+
 The value associated with an extent local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
 that extent. The extent local is *bound* to the value.
                                    
 ###  Example Use Of Extent Local Variables
 
-The `ServerFramework` example described above can easily be rewritten to
+The `Server` example described above can easily be rewritten to
 use class `ExtentLocal` instead of `ThreadLocal`.
 
-     class ServerFramework {
+     class Server {
       // 1. Provide a per-thread channel betwen the framework and its components
       final static ExtentLocal<Permissions> PERMISSIONS = ...;
       ...
@@ -293,19 +295,18 @@ use class `ExtentLocal` instead of `ThreadLocal`.
       ...
     }
 
-    class Logger {
-      void warn(String message)  throws PermissionException {
-        // 3. Get permissions for request thread and check  
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG)  throw new PermissionException();
-        // 4. Ok to write the warning
-        write(logFile, "WARNING : %s %s".format(timeStamp(), message));
+    class DBDriver {
+      DBConnection open(...) throws PermissionException {
+        // 3. Get permissions for request thread and check
+        Permissions permissions = Server.PERMISSIONS.get();
+        if (!permissions.allowed(DATABASE) throw new  PermissionException();
+        // 4. Ok to connect to a database
+        return DBDriver.newConnection(...);
       }
       ...
     }
-    ...
 
-As before, the `ServerFramework` includes an initialization at 1. which
+As before, the `Server` includes an initialization at 1. which
 ensures that field `PERMISSIONS` references an `ExtentLocal`. The important
 difference occurs at point 2. where previously there was a call to
 `ThreadLocal.set()`. This is changed to use a call to methods
@@ -329,12 +330,18 @@ The first big difference between this example and the previous one
 is that the binding established by `where()` is only
 visible within the extent of the code called from `run()`. If a call to
 `PERMISSIONS.get()` was inserted after the call to `run()` an exception
-would be thrown because `PERMISSIONS` is no longer bound.
+would be thrown because `PERMISSIONS` is no longer bound. The syntax
+for employing an `ExtentLocal` enforces a well defined lifetime for
+data sharing, unlike the unbounded persistence provided by ThreadLocal.
 
 The second big difference is that the binding established by `where()` is
 immutable within the extent of `run()`. Methods called from `run()` can
 `get()` the current binding but there is no `set()` method allowing them
 to change the binding established at point 1.
+
+Note that the `DBDriver` method looks identical. The difference is that
+the call to `get()` is invoking a method belonging to `ExtentLocal` not
+`ThreadLocal`.
 
 ###  Rebinding of Extent Local Variables
 
@@ -344,55 +351,48 @@ However, there are times when one of those called methods might
 need to use the same `ExtentLocal` variable to communicate a different
 value to the methods *it* calls. The
 requirement is not to change the original binding but to establish a new
-binding for nested calls.
+binding for nested calls. 
+
                      
-As an example consider a second API method of class `Logger`.
+As an example consider this API method of the framework `Logger`
+class.
 
-    public void detail(Supplier<String> formatter);
+    public void log(Supplier<String> formatter);
 
-This method formats and prints a detailed log message when
-`DETAIL` level logging is enabled. If a lower level is enabled
-then it prints nothing. The caller passes in a `Supplier` argument
-whose `get()` method is called by `detail()` to retrieve the message
-text. Using a `Supplier` avoids the cost of formatting when `DETAIL`
-logging is disabled.
+This method formats and prints a detailed log message when logging is enabled.
+If logging is disabled it prints nothing. The caller passes in a `Supplier`
+argument whose `get()` method is called by `log()` to retrieve the message
+text. Using a `Supplier` avoids the cost of formatting when logging is
+disabled.
 
-`detail()` is a good candidate for the use of rebinding. It may
-get called by a thread which has multiple permissions, not just the
-`LOG` permission needed to allow logging. However, when `detail()`
-calls `formatter.get()` the called code is only expected to do text
-processing. It should not need to do any work that requires permissions.
+`log()` is a good candidate for the use of rebinding. The `Logger` code is
+trusted code. However, it is expected to call the formatter, which is
+untrusted code. This untrusted code should only need to do text formatting.
+It should not need to do any work that requires permissions.
 It would be ideal if the extent local variable `PERMISSIONS` was bound
 to an empty `Permissions` instance for the extent of the `get()` call.
 
-The code for method `detail()` is shown below
+The code for method `log()` is shown below
 
     class Logger {
-      ...
-      void detail(Supplier<String> formatter) {
-        // 1. Get permissions for request thread and check  
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
-        if (!permissions.allowed(LOG)) throw new PermissionException();
-        // 2. Only print the message if needed
-        if (logLevel < DETAIL) return;
-        // 3. Obtain an empty permissions instance 
-        Permissions nopermission = Permissions.none();
-        // 4. Rebind PERMISSIONS for extent of formatter get
-        String message = ExtentLocal.where(ServerFramework.PERMISSIONS, nopermission)
+      void log(Supplier<String> formatter) {
+        if (loggingEnabled) {
+          // 1. Obtain an empty permissions instance 
+          Permissions nopermission = Permissions.none();
+          // 2. Rebind PERMISSIONS for extent of formatter get
+          String message = ExtentLocal.where(Server.PERMISSIONS, nopermission)
                                   .call(() -> formatter.get());
-        // 5. Print the formatted message
-        write(logFile, "DETAIL : %s %s".format(timeStamp(), message));
-        ...
+          // 3. Print the formatted message
+          write(logFile, "DETAIL : %s %s".format(timeStamp(), message));
+          ...
 
-This method includes a permission check at point 1. to ensure that logging
-is permitted. This is followed by a check of the log level at 2., returning
-if `DETAIL` logging is disabled. At point 3. an empty `Permissions` instance
-is obtained. At point 4. `where()` rebinds extent-local `PERMISSIONS`
+The logger obtains an empty `Permissions` instance at point 1.
+is obtained. At point 2. `where()` rebinds extent-local `PERMISSIONS`
 to this empty `Permissions` instance for the extent of the `call()` that
 follows it. The lambda passed as argument to `call()` invokes `formatter.get()`
-to retrieve the formatted message. If code called from `formatter.get()` tries
-to use a component service, the permissions check in the service code will retrieve
-the empty `Permission` instance, leading to a `PermissionException`.
+to retrieve the formatted message.  If code called from `formatter.get()`
+tries to use the database, the permissions check in the `DBDriver` code will
+retrieve the empty `Permission` instance, leading to a `InvalidPermissionException`.
 
 Notice that this example uses the paired methods `where()` and `call()`,
 whereas the previous example used `where()` and `run()`. That is because in
@@ -400,6 +400,11 @@ this example the code executed below `call()` needs to return a result.
 The `String` returned by `formatter.get()` is returned from `call()` and used to
 bind local variable `message`. `call()` must be passed an argument that returns a
 result. `run()` must be passed an argument that does not return a result.
+
+Once again it is clear that the syntax of `ExtentLocal` reinforces the guarantee
+of a well defined lifetime for sharing by limiting rebinding to a nested extent
+i.e. to the lifetime of the call to `formatter.get()` with no possibility of
+changing the binding in the current extent.
 
 ###  Inheritance of Extent Local Variables
 
@@ -430,7 +435,7 @@ The code for method `processQuery` is provided below.
 
       void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
         // 1. Get permissions for request thread and check 
-        Permissions permissions = ServerFramework.PERMISSIONS.get();
+        Permissions permissions = Server.PERMISSIONS.get();
         if (!permissions.allowed(DATABASE) throw new  InvalidAccessException();
         // 2. Run the database query
         List<DBRow> rows = executeQuery(query);
@@ -475,7 +480,8 @@ means that a value bound in the call to to `where()` has a determinate lifetime,
 as far as visibility via the `ExtentLocal` is concerned. The `Permission`
 object is available while the child thread is running. The call to `join()`
 at the end of the try block ensures that child threads can no longer be using
-it.
+it. These two capabilities work together to avoid the problem of unbounded
+persistence seen when using `ThreadLocal`. 
 
 Using class StructuredExecutor to parallelise row processing means that query
 results returning thousands or even millions of rows can be executed in
