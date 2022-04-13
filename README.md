@@ -37,7 +37,7 @@ complementary functionality. For example, a networked server may combine
 business logic to handle service requests with trusted components such as a database
 driver providing data persistence, and a logging framework that records
 progress or noteworthy events. Such server components often need to share data
-between themselves, independent from the business logic. For example, as a
+between themselves, independent from the business logic. As a
 security measure, the server might allocate a `Permissions` token  to each
 thread that handles a request. The server components would use the token to
 restrict access to the operations they provide.
