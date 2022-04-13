@@ -432,7 +432,7 @@ of `processQueryList` uses the structured execution framework.
 
 The code for method `processQueryList` is provided below.
 
-      void processQueryList(List<DBQuery> queryies Consumer<DBQuery> handler) {
+      void processQueryList(List<DBQuery> queries Consumer<DBQuery> handler) {
         / 1. Parallelize calls to handler with a structured fork join executor 
         try (var s = StructuredExecutor.open()) {
           for (var query : queries) {
@@ -444,21 +444,19 @@ The code for method `processQueryList` is provided below.
         }
       }
 
-The first thing `processQuery` does at 1. is ensure the caller has
-the `DATABASE` permission before proceeding to run a query against
-the database at 2. The try with resources at 3. opens a `StructuredExecutor`.
-This is a class provided as part of the virtual threads implementation
-which allows a collections of virtual threads to be managed using a fork
-join model. It gets automatically closed at the end of the try with
-resources block.
+The first thing `processQuery` does at 1. is use rty with resources to
+open a `StructuredExecutor`. This is a class provided as part of the virtual
+threads implementation which allows a collections of virtual threads to be
+managed using a fork join model. It gets automatically closed at the end of
+the try with resources block.
 
-Inside the `for` loop at 4. a virtual thread is forked to run the handler on
-the current `DBRow`. After the for loop at 5. a call to `join()` ensures that
+Inside the `for` loop at 2. a virtual thread is forked to run the handler on
+the current `DBQuery`. After the for loop at 2. a call to `join()` ensures that
 all the forked virtual threads have completed. This ensures that all rows
 have been processed before the try block is exited.
 
 There is one important detail in the `processQuery` code that still needs
-explaining. The call to `rowHandler.apply()` happens in a forked
+explaining. The call to `handler.apply()` happens in a forked
 virtualThread. So, how can a call to `PERMISSIONS.get()` in the forked thread
 retrieve the value that was `set()` in the forking thread? This works because
 class `ExtentLocal` has been designed to share bindings across thread forks.
