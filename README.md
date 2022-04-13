@@ -56,13 +56,13 @@ database connection by calling `DBDriver.open()` at call 7. At this point `DBDri
 needs to decide whether the thread is permitted to access the database.
 
 The requirement here is for `PERMISSIONS` to act as a direct, per-thread channel
-to pass permissions from the `Server` in call 1 to the `DBDriver` in
-call 7. The value `set()` by Thread 1 in call 1 should be the value returned when
-Thread 1 performs a `get()` in call 7. Thread 2 must be able to `set()` and
+to pass permissions from the `Server` at 1. to the `DBDriver` at
+7. The value `set()` by Thread 1 at 1. should be the value returned when
+Thread 1 performs a `get()` at 7. Thread 2 must be able to `set()` and
 `get()` its own independent value. In the example, Thread 1 is permitted to
-access the database, so the `DBDriver` proceeds to call `newConnection()` at
-call 8. Thread 2 has no database access permission, so `DBDriver`
-creates and throws an `InvalidPermissionException`. 
+access the database, so the `DBDriver` proceeds to call `newConnection()` at 8.
+Thread 2 has no database access permission, so `DBDriver` creates and
+throws an `InvalidPermissionException`. 
 
     Thread 1                                  Thread 2
 
