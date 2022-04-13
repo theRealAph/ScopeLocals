@@ -59,9 +59,9 @@ The requirement here is for `PERMISSIONS` to act as a direct, per-thread channel
 to pass permissions from the `Server` in call 1 to the `DBDriver` in
 call 7. The value `set()` by Thread 1 in call 1 should be the value returned when
 Thread 1 performs a `get()` in call 7. Thread 2 must be able to `set()` and
-`get()` its own independent value. In the example, Thread 1's `Permission` object
-allows database access, so the `DBDriver` proceeds to call `newConnection()` at
-call 8. The `Permission` for Thread 2 disallows database access, so `DBDriver`
+`get()` its own independent value. In the example, Thread 1 is permitted to
+access the database, so the `DBDriver` proceeds to call `newConnection()` at
+call 8. Thread 2 has no database access permission, so `DBDriver`
 creates and throws an `InvalidPermissionException`. 
 
     Thread 1                                  Thread 2
