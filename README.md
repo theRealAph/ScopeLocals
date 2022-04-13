@@ -444,7 +444,7 @@ The code for method `processQueryList` is provided below.
         }
       }
 
-The first thing `processQuery` does at 1. is use rty with resources to
+The first thing `processQuery` does at 1. is use try with resources to
 open a `StructuredExecutor`. This is a class provided as part of the virtual
 threads implementation which allows a collections of virtual threads to be
 managed using a fork join model. It gets automatically closed at the end of
