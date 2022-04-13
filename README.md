@@ -39,7 +39,7 @@ driver providing data persistence, and a logging framework that records
 progress or noteworthy events. Such server components often need to share data
 between themselves, independent from the business logic. As a
 security measure, the server might allocate a `Permissions` token  to each
-thread that handles a request. The server components would use the token to
+thread that handles a request. Other server components would use the token to
 restrict access to the operations they provide.
 
 Thread context data is normally communicated from a caller
