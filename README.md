@@ -266,7 +266,7 @@ That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.
 
 It should now be clear that the thread call stack diagram above is
-actually a picture of two separate extents for two different threads.
+a picture of two separate extents for two different threads.
 In both cases the bottom frame of the extent is a call to method
 `Server.processRequest()`. In Thread 1 the top frame is a call to
 method `DBDriver.newConnection()` while in Thread 2 it is a call to
@@ -288,7 +288,7 @@ use class `ExtentLocal` instead of `ThreadLocal`.
       void processRequest(Request request, Response response) {
         int p = (request.isAdmin() ? LOG|DATABASE : LOG);
         Permissions permissions = new Permissions(p);
-        // 2. Bind the extent local for the extent of the run operation
+        // 2. Bind the extent local and run the request handler
         ExtentLocal.where(PERMISSIONS, permissions)
                      .run(() -> { AppLogic.handleRequest(request, response); });
       }
