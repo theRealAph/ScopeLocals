@@ -414,15 +414,15 @@ reasons as it is useful to inherit a `ThreadLocal`. This works with
 `ExtentLocal` variables in a way that avoids many of the problems that
 arise when using a `ThreadLocal`.
 
-An example use of inheritance is provided by API method `processQuery` of
-class `DBDriver`.
+An example use of inheritance is provided by the following example method
+from the business logic.
 
-    public void processQuery(DBQuery query, Consumer<DBRow> rowHandler);
+    public void processQueryList(List<DBQuery> queries, Consumer<DBQuery> handler);
 
-Method `processQuery` runs a `query` against the database ,retrieving a
-list of results of type `DBRow`.  Argument `rowHandler` has type
-`Consumer<DBRow>`. That means it can be applied to each result by
-calling `rowHandler.apply(row)`. In order to speed up processing of query
+Method `processQueryList` executes a list of `queries` against the database.
+Argument `handler` is a `Consumer<DBQuery>` that is used run each individual
+query. That means it can be applied to each `DBQuery` in list `queries` by
+calling `handler.apply(query)`. In order to speed up processing of query
 results, each call to `apply` is executed in its own virtual thread.
 
 If a problem occurs for some `DBRow` then the handler code will need to use
