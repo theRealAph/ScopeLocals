@@ -179,11 +179,11 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   garbage collected unless the thread exits.
 
   Clearly, it would be better if sharing of data from `set()` and
-  `get()` calls could be achieved with a clearly determined lifetime,
+  `get()` calls could be achieved with a well determined lifetime,
   limiting persistence of the data to a well-bounded interval during
   execution of the thread.
 
-- *Inheritance* — The `ThreadLocal` persistence problem can be much worse
+- *Expensive Inheritance* — The `ThreadLocal` persistence problem can be much worse
   when using large numbers of threads because`ThreadLocal`s may be inherited
   from parent to child thread. Each thread has to allocate storage for every
   thread local variable set in that thread. If a newly created child `Thread`
