@@ -372,7 +372,7 @@ to do any work that requires permissions.
 It would be ideal if the extent local variable `PERMISSIONS` was bound
 to an empty `Permissions` instance for the extent of the `formatter.get()` call.
 
-The code for method `log()` is shown below
+The code for method `log()` is shown below.
 
     class Logger {
       void log(Supplier<String> formatter) {
@@ -387,7 +387,7 @@ The code for method `log()` is shown below
           ...
 
 The logger obtains an empty `Permissions` instance at point 1.
-is obtained. At point 2. `where()` rebinds extent-local `PERMISSIONS`
+At point 2. `where()` rebinds extent-local `PERMISSIONS`
 to this empty `Permissions` instance for the extent of the `call()` that
 follows it. The lambda passed as argument to `call()` invokes `formatter.get()`
 to retrieve the formatted message.  If code called from `formatter.get()`
@@ -402,8 +402,8 @@ bind local variable `message`. `call()` must be passed an argument that returns 
 result. `run()` must be passed an argument that does not return a result.
 
 Once again it is clear that the syntax of `ExtentLocal` reinforces the guarantee
-of a well defined lifetime for sharing by limiting rebinding to a nested extent
-i.e. to the lifetime of the call to `formatter.get()` with no possibility of
+of a well defined lifetime for sharing, by limiting rebinding to a nested extent,
+i.e. to the lifetime of the call to `formatter.get()`, with no possibility of
 changing the binding in the current extent.
 
 ###  Inheritance of Extent Local Variables
