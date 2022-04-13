@@ -318,7 +318,7 @@ The `where()` call  *binds* `the ExtentLocal` referenced from `PERMISSIONS`
 for the extent of the `run()` call. That means a call to
 `PERMISSIONS.get()` executed by any method called from `run()` will return
 the value passed to `where()`. So, in this case, if
-`Logger.warn()` gets called, directly or indirectly, by method
+`DBDriver.open()` gets called, directly or indirectly, by method
 `AppLogic.handleRequest()` then the `PERMISSIONS` retrieved at point 3.
 will be value passed in the `where()` call at point 2.
 
@@ -334,7 +334,8 @@ would be thrown because `PERMISSIONS` is no longer bound. The syntax
 for employing an `ExtentLocal` enforces a well defined lifetime for
 data sharing, unlike the unbounded persistence provided by ThreadLocal.
 
-The second big difference is that the binding established by `where()` is
+The second big difference between this example and the previous one
+is that the binding established by `where()` is
 immutable within the extent of `run()`. Methods called from `run()` can
 `get()` the current binding but there is no `set()` method allowing them
 to change the binding established at point 1.
