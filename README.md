@@ -430,21 +430,16 @@ the caller thread really needs to be inherited by the child virtual thread that
 executes the handler. This happens automatically because the implementation
 of `processQueryList` uses the structured execution framework.
 
-The code for method `processQuery` is provided below.
+The code for method `processQueryList` is provided below.
 
-      void processQuery(DBQuery query, Consumer<DBRow> rowHandler) {
-        // 1. Get permissions for request thread and check 
-        Permissions permissions = Server.PERMISSIONS.get();
-        if (!permissions.allowed(DATABASE) throw new  InvalidAccessException();
-        // 2. Run the database query
-        List<DBRow> rows = executeQuery(query);
-        / 3. Parallelize handler with a structured fork join executor 
+      void processQueryList(List<DBQuery> queryies Consumer<DBQuery> handler) {
+        / 1. Parallelize calls to handler with a structured fork join executor 
         try (var s = StructuredExecutor.open()) {
-          for (var row : rows) {
-            // 4. process each row in its own virtual thread
-            s.fork(() -> rowHandler.apply(row));
+          for (var query : queries) {
+            // 2. process each query in its own virtual thread
+            s.fork(() -> handler.apply(query));
           }
-          // 5. wait for all virtual threads to complete
+          // 3. wait for all virtual threads to complete
           s.join();
         }
       }
