@@ -414,22 +414,21 @@ reasons as it is useful to inherit a `ThreadLocal`. This works with
 `ExtentLocal` variables in a way that avoids many of the problems that
 arise when using a `ThreadLocal`.
 
-An example use of inheritance is provided by the following example method
+An example use of inheritance is provided by the following method
 from the business logic.
 
     public void processQueryList(List<DBQuery> queries, Consumer<DBQuery> handler);
 
 Method `processQueryList` executes a list of `queries` against the database.
 Argument `handler` is a `Consumer<DBQuery>` that is used run each individual
-query. That means it can be applied to each `DBQuery` in list `queries` by
-calling `handler.apply(query)`. In order to speed up processing of query
-results, each call to `apply` is executed in its own virtual thread.
+query. That means it can be applied to each`DBQuery` in list `queries` by
+calling `handler.apply(query)`.
 
-If a problem occurs for some `DBRow` then the handler code will need to use
-the `Logger` to log an error message. So, the binding of `PERMISSIONS` for
+In order to speed up processing of query results, each call to `apply` is executed
+in its own virtual thread.  So, the binding of `PERMISSIONS` for
 the caller thread really needs to be inherited by the child virtual thread that
 executes the handler. This happens automatically because the implementation
-of `processQuery` uses the structured execution framework.
+of `processQueryList` uses the structured execution framework.
 
 The code for method `processQuery` is provided below.
 
