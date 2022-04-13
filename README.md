@@ -366,10 +366,9 @@ argument whose `get()` method is called by `log()` to retrieve the message
 text. Using a `Supplier` avoids the cost of formatting when logging is
 disabled.
 
-`log()` is a good candidate for the use of rebinding. The `Logger` code is
-trusted code. However, it is expected to call the formatter, which is
-untrusted code. This untrusted code should only need to do text formatting.
-It should not need to do any work that requires permissions.
+`log()` is a good candidate for the use of rebinding. The `Supplier` passed
+to the `Logger` should only need to do text formatting. It should not need
+to do any work that requires permissions.
 It would be ideal if the extent local variable `PERMISSIONS` was bound
 to an empty `Permissions` instance for the extent of the `formatter.get()` call.
 
