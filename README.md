@@ -66,12 +66,12 @@ creates and throws an `InvalidPermissionException`.
 
     Thread 1                                  Thread 2
 
-    8. DBDriver.newConnection()               8. InvalidPermissionException() 
-    7. DBDriver.open() <-- get ---------+     7. DBDriver.open() <--- get --------+
-       ...                              |        ...                              |
-       ...                       PERMISSIONS     ...                      PERMISSIONS                      
-    2. AppLogic.handleRequest()         |     2. AppLogic.handleRequest()         |
-    1. Server.processRequest() -- set --+     1. Server.processRequest() -- set --+
+    8. DBDriver.newConnection()                         8. InvalidPermissionException() 
+    7. DBDriver.open() <-- get -------------------+     7. DBDriver.open() <--- get --------------+
+       ...                                        |        ...                                    |
+       ...                                 PERMISSIONS     ...                            PERMISSIONS                      
+    2. AppLogic.handleRequest()                   |     2. AppLogic.handleRequest()               |
+    1. Server.processRequest() -- set(DATABASE) --+     1. Server.processRequest() -- set(NONE) --+
      
 ### Currently Supported Options
 
