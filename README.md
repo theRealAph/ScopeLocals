@@ -146,7 +146,7 @@ of `ThreadLocal` that affect even this sort of well-structured use.
   order state will be read and updated.
  
   Such problems are possible even with a well-defined API like the `Server`
-  example. If the `DBDriver` accidentally reset the permissions to NONE`
+  example. If the `DBDriver` accidentally reset the permissions to `NONE`
   the error would only appear the next time the business logic tried to
   perform a database operation.
 
