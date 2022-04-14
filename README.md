@@ -24,11 +24,11 @@ number of child threads. This usage especially applies to virtual threads.
 
 It is not a goal to change the Java Programming Language.
 
-It is not a goal to require migration away from thread local
+It is not a goal to require migration away from thread-local
 variables or to deprecate the `ThreadLocal` API.
 
 It is not a goal for this new programming model to require use
-of interface `AutoCloseable`.
+of try-with-resources or interface `AutoCloseable`.
 
 ## Motivation
 
@@ -37,16 +37,18 @@ complementary functionality. For example, a networked server may combine
 business logic to handle service requests with trusted components such as a database
 driver providing data persistence, and a logging framework that records
 progress or noteworthy events. Such server components often need to share data
-between themselves, independent from the business logic. As a
-security measure, the server might allocate a `Permissions` token  to each
-thread that handles a request. Other server components would use the token to
-restrict access to the operations they provide.
+between themselves, independent from the business logic.
+
+For example, as a security measure, the server might allocate a
+`Permissions` token to each thread that handles a request. Other
+server components would use that token to restrict access to the
+operations they provide.
 
 Thread context data is normally communicated from a caller
 to called methods in the same thread via method arguments. However,
 in a case like this, where data needs to be pushed through
-business logic calls it simplifies the implementation if the server can share
-context with its components via some alternative channel.
+business logic calls, it simplifies the implementation if the server can share
+context with its components via some other channel.
 
 The diagram below illustrates the sort of behaviour we would like. It shows the
 call stack for two different threads handling a server request. Each call stack
@@ -75,11 +77,12 @@ throws an `InvalidPermissionException`.
 
 ### Currently Supported Options
 
-Developers traditionally turn to thread-local variables in situations like this. It
-provides developers with an independent variable for each thread to
-share their own copy of data.
+Developers traditionally turn to thread-local variables in situations
+like this. An instance of Class `ThreadLocal` provides developers with
+an independent variable for each thread to share their own copy of
+data.
 
-The following example shows how a `Server` implementation might use a
+The following example shows how a `Server` implementation might use such a
 thread-local variable to communicate `Permissions` from the server to the database.
 `Server.processRequest()` and `DBDriver.open()` implement the methods
 invoked at 1. and 7. in the thread call stack diagram above.
@@ -112,7 +115,7 @@ invoked at 1. and 7. in the thread call stack diagram above.
 
 The `ThreadLocal` declared at 1. in static field `PERMISSIONS` provides a
 way to ensure that each thread handling a request can have its own independent
-permissions. A thread-local variables serves as a key that is used to look up
+permissions. A `ThreadLocal` serves as a key that is used to look up
 a `Permission` value for the current thread. So, there is not exactly _one_
 incarnation of field `PERMISSIONS` shared across all instances of Foo; instead, there are
 _multiple_ incarnations of the field, one per thread, and the incarnation
@@ -124,7 +127,7 @@ an argument to calls from the service handler through the business logic
 and into the database driver or logger.
 
 The declaration at 1. creates a `ThreadLocal` object and assigns it to static field
-`PERMISSIONS`. Before it can be used the `Server` handler thread needs to call the `set()`
+`PERMISSIONS`. Before it can be used the `Server` handler thread must call the `set()`
 method at 2. This ensures that the incarnation of field
 `PERMISSIONS` specific to the handler thread identifies the right permissions
 for that request. The server is now ready to execute the business logic.
@@ -136,7 +139,7 @@ to execute it at 4.
 
 This example demonstrates that thread-local variables _can_ be used to implement the
 behaviour needed for this case. However, there are problems with the design
-of thread-local variables that affect even this sort of well-structured use.
+of thread-local variables that affect even this example of well-structured use.
 
 - *Unconstrained Mutability*  —  Every thread-local variable is _mutable_:
   that is to say, any code that can access a thread-local variable's `get()` can
@@ -154,7 +157,7 @@ of thread-local variables that affect even this sort of well-structured use.
   support a more general model of communication than we usually need. Data is able to flow in
   either direction between a caller and called method. This generality may be
   needed for a few difficult cases. However, in the worst case, programming
-  with thread local variables can lead to spaghetti-like dataflow. The result
+  with thread-local variables can lead to spaghetti-like dataflow. The result
   is code whose structure is hard to discern, let alone maintain.
 
   In our example, what is really needed is a simple, one-way broadcast
@@ -186,8 +189,8 @@ of thread-local variables that affect even this sort of well-structured use.
 - *Expensive Inheritance* — The thread-local variable persistence problem can be much worse
   when using large numbers of threads because thread-local variables may be inherited
   from parent to child thread. Each thread has to allocate storage for every
-  thread local variable set in that thread. If a newly created child `Thread`
-  inherits the thread local it has to allocate its own storage. When an
+  thread-local variable set in that thread. If a newly created child `Thread`
+  inherits the thread-local variable, it has to allocate its own storage. When an
   application uses many `Thread`s and they, in
   turn, inherit thread-local variables this can add significant memory costs.
 
@@ -203,7 +206,7 @@ and come with some significant costs.
 
 ### Mismatch with Virtual Threads
 
-The above problems with thread local variables have become more pressing
+The above problems with thread-local variables have become more pressing
 in the context of virtual threads. These threads are cheap and plentiful, unlike
 today's platform threads which are expensive and scarce.
 
@@ -231,21 +234,21 @@ thread locals. An explicit `remove()` isn't necessary when a thread,
 virtual or not, terminates, because when a thread terminates all thread
 local variables are automatically removed. However, if you have thousands
 or millions of threads and every one has its own, inevitably mutable, set of
-thread local variables, the memory footprint may become significant.
+thread-local variables, the memory footprint may become significant.
 
-It would be ideal if the Java Platform provided a way to have per
-thread context for millions of virtual threads that is immutable and,
+It would be ideal if the Java Platform provided a way to have per-thread
+context for thousands or millions of virtual threads that is immutable and,
 given the low cost of forking virtual threads, inheritable. Because
-these ideal per thread variables are immutable, their data can be
+these ideal per-thread variables are immutable, their data can be
 easily shared by child threads, rather than copied to child
-threads. Thread local variables were the 90s realization of per thread
-variables; we need a better realization of per thread variables for
+threads. Thread-local variables were the 90s realization of per-thread
+variables; we need a better realization of per-thread variables for
 the modern era.
 
 ## Description
 
 An extent local variable is a per-thread variable that allows context
-to be set in a caller and read by callees. Unlike a thread local
+to be set in a caller and read by callees. Unlike a thread-local
 variable, an extent local variable is immutable: there is no `set()`
 method. Context can be anything from a business object to an instance
 of a system-wide logger.
@@ -484,13 +487,13 @@ thread with almost no overhead.
 ## Migrating to extent local variables
 
 In general, for the reasons we've listed above, extent local variables
-are likely to be useful in many cases where thread local variables are
-used today. We continue to support thread local variables, even with
+are likely to be useful in many cases where thread-local variables are
+used today. We continue to support thread-local variables, even with
 virtual threads, despite them not being ideal when threads are very
 numerous.
 
-The first thing to do is determine whether migrating thread local to
-extent local variables is appropriate. If in your application thread
+The first thing to do is determine whether migrating thread-local to
+extent-local variables is appropriate. If in your application thread
 local variables are used in an unstructured way so that a deep callee
 `set()`s a thread-local variable which is then retrieved by the caller,
 migration may be difficult, and you may find there is little to be
@@ -514,21 +517,21 @@ depth, but there are other good ways to use extent locals.
 
   Another example occurs in graphics, where there is a drawing context.
   Extent local variables, because of their automatic cleanup and
-  re-entrancy, are better suited to this than are thread local
+  re-entrancy, are better suited to this than are thread-local
   variables.
 
 
 [Generally, the Gods of Java want you to migrate to extent locals.]
 
 
-## Where can extent local variables _not_ replace thread local variables?
+## Where can extent local variables _not_ replace thread-local variables?
 
-There are cases where thread local variables are more appropriate than
+There are cases where thread-local variables are more appropriate than
 extent local variables. For example, one popular use of thread-local variables
 is to cache objects that are expensive to create. A notorious
 example is `java.text.DateFormat`, which is mutable so cannot be
 shared between threads without synchronization. In this case, creating
-a thread local `DateFormat` object which persists for the lifetime of
+a thread-local `DateFormat` object which persists for the lifetime of
 the thread might be exactly what you need:
 
 (In hindsight, making `DateFormat` mutable was a mistake, and we'd do
@@ -547,7 +550,8 @@ Extent locals have the following properties:
 * _Simple and fast code_: In most cases an extent-local `x.get()` is as
   fast as a local variable `x`. This is true regardless of how far
   away `x.get()` is from the point that the extent local `x` is bound.
-* _Structure_: These properties also also make it easier for a reader
+
+* _Structure_: The properties of immutabiliyt and locally-defined extent also also make it easier for a reader
   to reason about programs, in much the same way that declaring a
   field of a variable `final` does. The one-way nature of the channel
   from caller to callee makes it much
