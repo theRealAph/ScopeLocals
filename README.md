@@ -561,24 +561,26 @@ a multi-threaded program.)
 
 Extent locals have the following properties:
 
-* _Ease of use_: The values of extent local variables are only shared
-  in the extent of `run()` or `call()`, and not shared outside that
-  extent.
-
-* _Comprehensibility_: The properties of immutability and locally-defined extent make it easier for a reader
+* _Ease of use_: The properties of immutability and locally-defined extent make it easier for a reader
   to reason about programs, in much the same way that declaring a
   field of a variable `final` does. The one-way nature of the channel
   from caller to callee makes it much
   easier to reason about the flow of data in a program.
+
+* _Comprehensibility_: The values of extent local variables are only shared
+  in the extent of `run()` or `call()`, and not shared outside that
+  extent.
+
+* _Robustness_ These two properties, taken together, make it simple to
+  identify and verify where data is being shared and where it is being
+  consumed. The syntax of the API means that data cannot be shared,
+  accidentally or deliberately, outside the extent.
 
 * _Performance_: Extent-local variables can be inherited by threads
   created by a `StructuredExecutor` with very little overhead.
   Also, in most cases an extent-local `x.get()` is as fast as a local
   variable `x`. This is true regardless of how far away `x.get()` is
   from the point that the extent local `x` is bound.
-
-* _Robustness_ There is no `ExtentLocal.set()` method: extent locals,
-  once bound, are immutable.
 
 ## API
 
