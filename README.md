@@ -523,14 +523,14 @@ depth, but there are other good ways to use extent locals.
 
 - *Re-entrant code* — Sometimes you want to be able to
   detect recursion, perhaps because a framework isn't re-entrant or
-  because you want to limit recursion in some way. An extentlocal
+  because you want to limit recursion in some way. An extent-local
   variable provides a way to do this: set it once, invoke a method,
   and somewhere deep in the call stack, call `ExtentLocal.isBound()` to see if the
   thread-local variable is set. More elaborately, you might want the
   extent local variable to be a recursion counter.
 
 - *Nested transactions* — The detection of recursion would also be useful in the case of flattened
-  transactions: any transaction started when a transaction in progress
+  transactions: any transaction started while a transaction is in progress
   becomes part of the outermost transaction.
 
 - *Graphics contexts* — Another example occurs in graphics, where there is a drawing context.
