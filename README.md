@@ -59,8 +59,8 @@ needs to determine whether the thread is permitted to access the database.
 
 The requirement here is for `PERMISSIONS` to act as a direct, per-thread channel
 to pass permissions from the `Server` at 1. to the `DBDriver` at
-7. The value `set()` by Thread 1 at 1. should be the value returned when
-Thread 1 performs a `get()` at 7. Other threads must be able to `set()` and
+7. The value `set()` by a thread at 1. should be the value returned when
+the same thread performs a `get()` at 7. Other threads must be able to `set()` and
 `get()` their own independent values.
 
 In the example, Thread 1 is permitted to
@@ -119,7 +119,7 @@ The `ThreadLocal` declared at 1. in the static field `PERMISSIONS` provides a
 way to ensure that each thread handling a request can have its own independent
 permissions. This `ThreadLocal` serves as a key that is used to look up
 a `Permission` value for the current thread. So, there is not exactly _one_
-incarnation of field `PERMISSIONS` shared across all instances of Foo; instead, there are
+incarnation of field `PERMISSIONS` shared across all instances of `Server`; instead, there are
 _multiple_ incarnations of the field, one per thread, and the incarnation
 that is used when code sets or gets `PERMISSIONS`
 depends on the thread which is executing the code.
@@ -251,7 +251,7 @@ context for thousands or millions of virtual threads that is immutable and,
 given the low cost of forking virtual threads, inheritable. Because
 these ideal per-thread variables are immutable, their data can be
 easily shared by child threads, rather than copied to child
-threads. 
+threads.
 
 It would also be better if the extent of these variables was strongly
 and robustly bounded. If it were so, you could open some resource,
@@ -561,18 +561,24 @@ a multi-threaded program.)
 
 Extent locals have the following properties:
 
-* _Locally-defined extent_: The values of extent local variables are only bound
-  in the extent of `run()` or `call()`.
-* _Immutability_ There is no `ExtentLocal.set()` method: extent locals,
-  once bound, are effectively final.
-* _Simple and fast code_: In most cases an extent-local `x.get()` is as
-  fast as a local variable `x`. This is true regardless of how far
-  away `x.get()` is from the point that the extent local `x` is bound.
-* _Structure_: The properties of immutability and locally-defined extent also also make it easier for a reader
+* _Ease of use_: The values of extent local variables are only shared
+  in the extent of `run()` or `call()`, and not shared outside that
+  extent.
+
+* _Comprehensibility_: The properties of immutability and locally-defined extent make it easier for a reader
   to reason about programs, in much the same way that declaring a
   field of a variable `final` does. The one-way nature of the channel
   from caller to callee makes it much
   easier to reason about the flow of data in a program.
+
+* _Performance_: Extent-local variables can be inherited by threads
+  created by a `StructuredExecutor` with very little overhead.
+  Also, in most cases an extent-local `x.get()` is as fast as a local
+  variable `x`. This is true regardless of how far away `x.get()` is
+  from the point that the extent local `x` is bound.
+
+* _Robustness_ There is no `ExtentLocal.set()` method: extent locals,
+  once bound, are immutable.
 
 ## API
 
