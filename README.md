@@ -15,10 +15,10 @@ number of child threads. This usage especially applies to virtual threads.
   data flow.
 - *Comprehensibility* — Make the lifetime of shared data
   clearly visible in the program code.
-- *Performance* — Treat shared data as immutable so as to allow
-  sharing among large numbers of threads.
 - *Robustness* — Ensure that data shared by a caller
    is accessible only to legitimate callees.
+- *Performance* — Treat shared data as immutable so as to allow
+  sharing among large numbers of threads.
 
 ## Non-Goals
 
