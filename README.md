@@ -448,7 +448,7 @@ calling `handler.apply(query)`.
 In order to speed up processing of query results, each call to `apply` is executed
 in its own virtual thread.  So, the binding of `PERMISSIONS` for
 the caller thread really needs to be inherited by the child virtual thread that
-executes the handler. This happens automatically because the implementation
+executes `handler`. Inheritance happens automatically because the implementation
 of `processQueryList` uses the structured execution framework.
 
 The code for method `processQueryList` is provided below.
@@ -465,7 +465,7 @@ The code for method `processQueryList` is provided below.
         }
       }
 
-The first thing `processQuery` does at 1. is use try with resources to
+At 1., `processQuery` uses try-with-resources to
 open a `StructuredExecutor`. This is a class provided as part of the virtual
 threads implementation which allows a collections of virtual threads to be
 managed using a fork join model. It gets automatically closed at the end of
@@ -502,7 +502,7 @@ parallel. If a call to `rowHandler` needs to block, say to log a warning to
 a file on disk, work can continue by switching execution to another virtual
 thread with almost no overhead.
 
-## Migrating to extent local variables
+## Migrating to extent-local variables
 
 In general, for the reasons we've listed above, extent local variables
 are likely to be useful in many cases where thread-local variables are
@@ -521,7 +521,7 @@ However, in many cases extent local variables are exactly what you
 need. We've already covered hidden parameters for callbacks in some
 depth, but there are other good ways to use extent locals.
 
-- *Extent locals and recursion* — Sometimes you want to be able to
+- *Re-entrant code* — Sometimes you want to be able to
   detect recursion, perhaps because a framework isn't re-entrant or
   because you want to limit recursion in some way. An extentlocal
   variable provides a way to do this: set it once, invoke a method,
@@ -529,11 +529,11 @@ depth, but there are other good ways to use extent locals.
   thread-local variable is set. More elaborately, you might want the
   extent local variable to be a recursion counter.
 
-  The detection of recursion would also be useful in the case of flattened
+- *Nested transactions* — The detection of recursion would also be useful in the case of flattened
   transactions: any transaction started when a transaction in progress
   becomes part of the outermost transaction.
 
-  Another example occurs in graphics, where there is a drawing context.
+- *Graphics contexts* — Another example occurs in graphics, where there is a drawing context.
   Extent local variables, because of their automatic cleanup and
   re-entrancy, are better suited to this than are thread-local
   variables.
