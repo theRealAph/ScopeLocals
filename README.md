@@ -18,7 +18,8 @@ number of child threads. This usage especially applies to virtual threads.
 - *Robustness* — Ensure that data shared by a caller
    is accessible only to legitimate callees.
 - *Performance* — Treat shared data as immutable so as to allow
-  sharing among large numbers of threads.
+  sharing among large numbers of threads. Also, this immutability
+  greatly helps optimizing compilers.
 
 ## Non-Goals
 
@@ -39,9 +40,9 @@ driver providing data persistence, and a logging framework that records
 progress or noteworthy events. Such server components often need to share data
 between themselves, independent from the business logic.
 
-For example, as a security measure, the server might allocate a
+In this example, as a security measure, a server allocates a
 `Permissions` token to each thread that handles a request. Other
-server components would use that token to restrict access to the
+server components use that token to restrict access to the
 operations they provide.
 
 Thread context data is normally communicated from a caller
@@ -52,7 +53,7 @@ context with its components via some other channel.
 
 The diagram below illustrates the sort of behaviour we would like. It shows the
 call stack for two different threads handling a server request. Each call stack
-begins with a call to `processRequest()` at call 1. It calls business logic method
+begins with a call to `processRequest()` at call 1. The server calls business logic method
 `handleRequest()` at call 2. The application logic eventually tries to open a
 database connection by calling `DBDriver.open()` at call 7. At this point `DBDriver`
 needs to determine whether the thread is permitted to access the database.
@@ -113,7 +114,6 @@ invoked at 1. and 7. in the thread call stack diagram above.
       }
       ...
     }
-
 
 The `ThreadLocal` declared at 1. in the static field `PERMISSIONS` provides a
 way to ensure that each thread handling a request can have its own independent
@@ -183,7 +183,7 @@ of thread-local variables that affect even this example of well-structured use.
   any use for an object referenced from the thread-local variable, it will not be
   garbage collected unless the thread exits.
 
-  Clearly, it would be better if sharing of data from `set()` and
+  Clearly, it would be better if the sharing of data from `set()` and
   `get()` calls could be achieved with a well determined lifetime,
   limiting persistence of the data to a well-bounded interval during
   execution of the thread.
@@ -214,7 +214,7 @@ Java Platform needs a way to share context that
 * *Is cheap to inherit*: ideally, sharing context with child threads
   should not add any overhead to thread creation.
 
-### Mismatch with Virtual Threads
+### Extent-Local Variables and Virtual Threads
 
 The above problems with thread-local variables have become more pressing
 in the context of virtual threads. These threads are cheap and plentiful, unlike
@@ -238,9 +238,9 @@ example, they may share a logger on an output stream. Perhaps they may
 share some kind of security policy too.
 
 Because virtual threads are still instances of `Thread`, it is legitimate for a
-virtual thread to carry thread-local variables. The short lifetime of
-virtual threads minimises the problem of long term memory leaks via
-thread locals. An explicit `remove()` isn't necessary when a thread,
+virtual thread to carry thread-local variables. The problem of long-term
+memory leaks via thread locals is less acute in the case of short-lived threads.
+An explicit `remove()` isn't necessary when a thread,
 virtual or not, terminates, because when it terminates all thread-local
 variables are automatically removed. However, if you have thousands
 or millions of threads and every one has its own, inevitably mutable, set of
@@ -272,7 +272,7 @@ variable, an extent-local variable is immutable: there is no `set()`
 method. Context can be anything from a business object to an instance
 of a system-wide logger.
 
-The term _extent local_ derives from the idea of an extent in the Java
+The term _extent-local_ derives from the idea of an extent in the Java
 Virtual Machine. The JVM specification describes an _extent_ as follows:
 
 "It is often useful to describe the situation where, in a given
@@ -294,11 +294,11 @@ In both cases the bottom frame of the extent is a call to method
 method `DBDriver.newConnection()` while in Thread 2 it is a call to
 constructor `InvalidPermissionException()`
 
-The value associated with an extent local variable is defined in the
+The value associated with an extent-local variable is defined in the
 bottom most frame of some extent, and is accessible in every frame of
-that extent. The extent local is *bound* to the value.
+that extent. The extent-local variable is *bound* to the value.
 
-###  Example Use Of Extent Local Variables
+###  Example Use Of Extent-Local Variables
 
 The `Server` example described above can easily be rewritten to
 use class `ExtentLocal` instead of `ThreadLocal`.
@@ -366,7 +366,7 @@ Note that the `DBDriver` method looks identical. The difference is that
 the call to `get()` is invoking a method belonging to `ExtentLocal` not
 `ThreadLocal`.
 
-###  Rebinding of Extent Local Variables
+###  Rebinding of Extent-Local Variables
 
 The immutability of extent-local bindings means that a caller can  use
 an `ExtentLocal` to reliably communicate a constant value to the methods it calls.
@@ -390,7 +390,7 @@ disabled.
 `log()` is a good candidate for the use of rebinding. The `Supplier` passed
 to the `Logger` should only need to do text formatting. It should not need
 to do any work that requires permissions.
-It would be ideal if the extent local variable `PERMISSIONS` was bound
+It would be ideal if the extent-local variable `PERMISSIONS` was bound
 to an empty `Permissions` instance for the extent of the `formatter.get()` call.
 
 The code for method `log()` is shown below.
@@ -427,7 +427,7 @@ of a well defined lifetime for sharing, by limiting rebinding to a nested extent
 i.e. to the lifetime of the call to `formatter.get()`, with no possibility of
 changing the binding in the current extent.
 
-###  Inheritance of Extent Local Variables
+###  Inheritance of Extent-Local Variables
 
 There are occasions where it would be useful for an extent-local variable
 to be inherited from parent thread to child thread, for much the same
@@ -504,7 +504,7 @@ thread with almost no overhead.
 
 ## Migrating to extent-local variables
 
-In general, for the reasons we've listed above, extent local variables
+In general, for the reasons we've listed above, extent-local variables
 are likely to be useful in many cases where thread-local variables are
 used today. We continue to support thread-local variables, even with
 virtual threads, despite them not being ideal when threads are very
@@ -517,7 +517,7 @@ local variables are used in an unstructured way so that a deep callee
 migration may be difficult, and you may find there is little to be
 gained.
 
-However, in many cases extent local variables are exactly what you
+However, in many cases extent-local variables are exactly what you
 need. We've already covered hidden parameters for callbacks in some
 depth, but there are other good ways to use extent locals.
 
@@ -527,14 +527,14 @@ depth, but there are other good ways to use extent locals.
   variable provides a way to do this: set it once, invoke a method,
   and somewhere deep in the call stack, call `ExtentLocal.isBound()` to see if the
   thread-local variable is set. More elaborately, you might want the
-  extent local variable to be a recursion counter.
+  extent-local variable to be a recursion counter.
 
 - *Nested transactions* — The detection of recursion would also be useful in the case of flattened
   transactions: any transaction started while a transaction is in progress
   becomes part of the outermost transaction.
 
 - *Graphics contexts* — Another example occurs in graphics, where there is a drawing context.
-  Extent local variables, because of their automatic cleanup and
+  extent-local variables, because of their automatic cleanup and
   re-entrancy, are better suited to this than are thread-local
   variables.
 
@@ -542,10 +542,10 @@ In general, where the pattern of usage of a thread-local variable
 corresponds well with extent-local variables, it's a good idea to
 switch to them, for the reasons we've described above.
 
-## Where can extent local variables _not_ replace thread-local variables?
+## Where can extent-local variables _not_ replace thread-local variables?
 
 There are cases where thread-local variables are more appropriate than
-extent local variables. For example, one popular use of thread-local variables
+extent-local variables. For example, one popular use of thread-local variables
 is to cache objects that are expensive to create. A notorious
 example is `java.text.DateFormat`, which is mutable so cannot be
 shared between threads without synchronization. In this case, creating
@@ -559,7 +559,7 @@ a multi-threaded program.)
 
 ## In summary
 
-Extent locals have the following properties:
+extent-local variables have the following properties:
 
 * _Ease of use_: The properties of immutability and locally-defined extent make it easier for a reader
   to reason about programs, in much the same way that declaring a
@@ -567,7 +567,7 @@ Extent locals have the following properties:
   from caller to callee makes it much
   easier to reason about the flow of data in a program.
 
-* _Comprehensibility_: The values of extent local variables are only shared
+* _Comprehensibility_: The values of extent-local variables are only shared
   in the extent of `run()` or `call()`, and not shared outside that
   extent.
 
@@ -578,9 +578,9 @@ Extent locals have the following properties:
 
 * _Performance_: Extent-local variables can be inherited by threads
   created by a `StructuredExecutor` with very little overhead.
-  Also, in most cases an extent-local `x.get()` is as fast as a local
+  Also, in most cases an extent-local variable `x.get()` is as fast as a local
   variable `x`. This is true regardless of how far away `x.get()` is
-  from the point that the extent local `x` is bound.
+  from the point that the extent-local variable `x` is bound.
 
 ## API
 
@@ -590,21 +590,22 @@ http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/co
 
 ## Alternatives
 
-It is possible to emulate many of the features of extent locals with
+It is possible to emulate many of the features of extent-local variables with
 thread-local variables, albeit at some cost in memory footprint,
 security, and performance.
 
 We have experimented with a modified version of Class `ThreadLocal` that
-supports some of the characteristics of extent locals. However,
+supports some of the characteristics of extent-local variables. However,
 carrying the additional baggage of thread-local variables results in an
 implementation that is unduly burdensome, or an API that returns
 `UnsupportedOperationException` for much core functionality, or both.
 And we'd still have the problem of memory management.
 
 It is better, therefore, not to modify Class `ThreadLocal` but to give
-extent locals an extirely separate identity.
+extent-local variables an extirely separate identity.
 
 ## Historical Note
-The idea for Extent Locals was inspired by the way many Lisp dialects
+
+The idea for extent-local variables was inspired by the way many Lisp dialects
 provide support for dynamically scoped free variables, in particular
 how they behave in a deep-bound, multi-threaded runtime like Interlisp-D.
