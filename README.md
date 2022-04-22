@@ -284,11 +284,6 @@ given method m1 is called the _bottom most frame_ of the extent."
 That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.
 
-**The syntax of the `ExtentLocal` API means that the values of
-extent-local variables are only shared in the extent of `run()` or
-`call()`, and never shared - accidentally or deliberately - outside
-that extent.**
-
 It should now be clear that the thread call stack diagram above is
 a picture of two separate extents for two different threads.
 In both cases the bottom frame of the extent is a call to method
@@ -354,9 +349,13 @@ The first big difference between this example and the previous one
 is that the binding established by `where()` is only
 accessible within the extent of the code called from `run()`. If a call to
 `PERMISSIONS.get()` was inserted after the call to `run()` an exception
-would be thrown because `PERMISSIONS` is no longer bound. The syntax
-for employing an `ExtentLocal` enforces a well defined lifetime for
-data sharing, unlike the unbounded persistence provided by ThreadLocal.
+would be thrown because `PERMISSIONS` is no longer bound. 
+
+**The syntax for employing an `ExtentLocal` enforces a well defined
+lifetime for data sharing, unlike the unbounded persistence provided
+by ThreadLocal. The values of extent-local variables are only shared
+in the extent of `run()` or `call()`, and never shared - accidentally
+or deliberately - outside that extent.**
 
 The second big difference from the previous example
 is that the binding established by `where()` is
