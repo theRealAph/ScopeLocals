@@ -353,7 +353,7 @@ would be thrown because `PERMISSIONS` is no longer bound.
 
 **The syntax for employing an `ExtentLocal` enforces a well defined
 lifetime for data sharing, unlike the unbounded persistence provided
-by ThreadLocal. The values of extent-local variables are only shared
+by `ThreadLocal`. The values of extent-local variables are only shared
 in the extent of `run()`, and never shared - accidentally
 or deliberately - outside that extent.**
 
