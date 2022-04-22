@@ -284,6 +284,11 @@ given method m1 is called the _bottom most frame_ of the extent."
 That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.
 
+** The syntax of the `ExtentLocal` API means that the values of
+extent-local variables are only shared in the extent of `run()` or
+`call()`, and never shared - accidentally or deliberately - outside
+that extent.**
+
 It should now be clear that the thread call stack diagram above is
 a picture of two separate extents for two different threads.
 In both cases the bottom frame of the extent is a call to method
@@ -362,6 +367,17 @@ to change the binding established at point 1.
 Note that the `DBDriver` method looks identical. The difference is that
 the call to `get()` is invoking a method belonging to `ExtentLocal` not
 `ThreadLocal`.
+
+**The properties of immutability and locally-defined extent make it
+easier for a reader to reason about programs, in much the same way
+that declaring a field of a variable `final` does. The one-way nature
+of the channel from caller to callee makes it much easier to reason
+about the flow of data in a program.**
+
+** Also, in most cases an extent-local variable `x.get()` is as fast
+as a local variable `x`. This is true regardless of how far away
+`x.get()` is from the point that the extent-local variable `x` is
+bound. **
 
 ###  Rebinding of Extent-Local Variables
 
@@ -501,6 +517,9 @@ parallel. If a call to `rowHandler` needs to block, say to log a warning to
 a file on disk, work can continue by switching execution to another virtual
 thread with almost no overhead.
 
+** Extent-local variables are inherited by threads created by a
+`StructuredExecutor` with very little overhead. **
+
 ## Migrating to extent-local variables
 
 In general, for the reasons we've listed above, extent-local variables
@@ -555,31 +574,6 @@ the thread might be exactly what you need:
 better today, but it was Java 1.1 in 1997. A thread-local variable
 makes it possible to use this utility class reasonably efficiently in
 a multi-threaded program.)
-
-## In summary
-
-extent-local variables have the following properties:
-
-* _Ease of use_: The properties of immutability and locally-defined extent make it easier for a reader
-  to reason about programs, in much the same way that declaring a
-  field of a variable `final` does. The one-way nature of the channel
-  from caller to callee makes it much
-  easier to reason about the flow of data in a program.
-
-* _Comprehensibility_: The values of extent-local variables are only shared
-  in the extent of `run()` or `call()`, and not shared outside that
-  extent.
-
-* _Robustness_ These two properties, taken together, make it simple to
-  identify and verify where data is being shared and where it is being
-  consumed. The syntax of the API means that data cannot be shared,
-  accidentally or deliberately, outside the extent.
-
-* _Performance_: Extent-local variables can be inherited by threads
-  created by a `StructuredExecutor` with very little overhead.
-  Also, in most cases an extent-local variable `x.get()` is as fast as a local
-  variable `x`. This is true regardless of how far away `x.get()` is
-  from the point that the extent-local variable `x` is bound.
 
 ## API
 
