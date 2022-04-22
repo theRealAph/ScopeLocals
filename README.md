@@ -284,7 +284,7 @@ given method m1 is called the _bottom most frame_ of the extent."
 That is to say, m1's extent is the set of methods m1 invokes, and any
 methods invoked transitively by them.
 
-** The syntax of the `ExtentLocal` API means that the values of
+**The syntax of the `ExtentLocal` API means that the values of
 extent-local variables are only shared in the extent of `run()` or
 `call()`, and never shared - accidentally or deliberately - outside
 that extent.**
@@ -374,10 +374,10 @@ that declaring a field of a variable `final` does. The one-way nature
 of the channel from caller to callee makes it much easier to reason
 about the flow of data in a program.**
 
-** Also, in most cases an extent-local variable `x.get()` is as fast
+**Also, in most cases an extent-local variable `x.get()` is as fast
 as a local variable `x`. This is true regardless of how far away
 `x.get()` is from the point that the extent-local variable `x` is
-bound. **
+bound.**
 
 ###  Rebinding of Extent-Local Variables
 
@@ -517,8 +517,8 @@ parallel. If a call to `rowHandler` needs to block, say to log a warning to
 a file on disk, work can continue by switching execution to another virtual
 thread with almost no overhead.
 
-** Extent-local variables are inherited by threads created by a
-`StructuredExecutor` with very little overhead. **
+**Extent-local variables are automatically inherited by threads
+created by a `StructuredExecutor` with very little overhead.**
 
 ## Migrating to extent-local variables
 
