@@ -67,6 +67,7 @@ does not allow database access. DBDriver::open inspects the token,
 realizes that user code must not proceed, and throws an 
 InvalidPermissionException.
 
+```
 Thread 1                                          Thread 2
 
     8. DBDriver.newConnection()                       8. InvalidPermissionException()
@@ -75,6 +76,7 @@ Thread 1                                          Thread 2
        ...                     Permissions(DATABASE)     ...                       Permissions(NONE)
     2. Application.handleRequest()            |       2. Application.handleRequest()            |
     1. Server.processRequest() ---------------+       1. Server.processRequest() ---------------+
+```
 
 ### Thread-local variables for sharing
 
