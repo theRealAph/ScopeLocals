@@ -76,17 +76,15 @@ Thread 1                                          Thread 2
     2. Application.handleRequest()            |       2. Application.handleRequest()            |
     1. Server.processRequest() ---------------+       1. Server.processRequest() ---------------+
 
-### Currently Supported Options
+### Thread-local variables for sharing
 
-Developers traditionally turn to thread-local variables in situations
-like this. An instance of Class `ThreadLocal` provides developers with
-an independent variable for each thread to share its own copy of
-data.
+Framework components traditionally use a _thread-local variable_ as a 
+private channel for sharing data. A thread-local variable is a field of 
+type ThreadLocal, with the special property that each thread which 
+accesses the field sees its own, thread-specific value of the field.
 
-The following example shows how a `Server` implementation might use a
-thread-local variable to communicate `Permissions` from the server to the database.
-`Server.processRequest()` and `DBDriver.open()` implement the methods
-invoked at 1. and 7. in the thread call stack diagram above.
+Here is an example of how the server component and database driver might 
+use a thread-local variable.
 
     class Server {
       // 1. Provide a per-thread channel between the framework and its components
