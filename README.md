@@ -32,43 +32,42 @@ of try-with-resources or interface `AutoCloseable`.
 
 ## Motivation
 
-Java programs are often built using libraries of related, reusable
-components. For example, a large application may include a server to
-handle each incoming request in its own thread, a database driver to provide
-persistence, and a logging framework to records progress or noteworthy
-event. These components often need to share data between themselves,
-independent from the business logic they are combined with.
+Java developers often rely on frameworks that contain distinct but 
+complementary components. For example, a framework may provide a server 
+component that handles requests by running user code; a database driver 
+that handles persistence; and a logger that integrates events from user 
+code and framework code.
 
-In this example, as a security measure, the server allocates a
-`Permissions` token to each thread that handles a request. Other
-server components use that token to restrict access to the
-operations they provide.
+Framework components need to share data between themselves, independent 
+from the user code that they support. For example, the server component 
+could create a Permissions token for each thread that handles a request, 
+and other components could inspect the token to restrict access to the 
+services they provide to user code.
 
-A thread handling a specific request normally communicates data from
-caller to callee via method arguments. However, this is not plainly
-not viable when the thread handling the server request calls business
-logic code provided by the application developer. The server needs some
-other channel to share the `Permissions` token with the driver and logger.
+Normally, code in a thread communicates data from caller to callee via 
+method arguments. However, this is not viable when the server component 
+calls user code provided by the application developer. The server 
+component needs a private channel to share the Permissions token with 
+the database driver and the logger.
 
-The following diagram provides a snapshot of the server application in
-the process of handling two different requests. The server dedicates a
-thread to each request for its duration. Request processing starts
-with a call to `Server.processRequest()` at 1. The server threads delegate
-to the business logic by calling `Application.handleRequest()` at 2. The
-business logic eventually tries to use a database connection by calling
-DBDriver.open() at 7. At this point DBDriver needs to determine
-whether the thread is permitted to access the database.
+The following diagram shows the server component handling two requests, 
+each in its own thread. Request handling starts with a call to 
+Server::processRequest, which delegates to user code, which eventually 
+tries to use a database connection by calling DBDriver::open. At this 
+point, DBDriver must determine whether the thread is permitted to access 
+the database:
 
-In Thread 1, the `Permissions` token created by `processRequest()` permit
-access to the database. The dashed line indicates a transfer of this token
-to the call to `DBDriver.open()` at 7. This method tests the `Permissions`
-and proceeds to call `DBDriver.newConnection()` at 8.
+- In Thread 1, the Permissions token created by Server::processRequest 
+allows database access. The dashed line indicates the token is shared 
+with DBDriver::open, which inspects the token and proceeds to call 
+DBDriver::newConnection.
 
-In Thread 2, the `Permissions` created by `processRequest()` at 1 do not permit
-access to the database. At 7 `DBDriver.open()` detects the error and proceeds to
-create an `InvalidPermissionException()` at 8.
+- In Thread 2, the Permissions token created by Server::processRequest 
+does not allow database access. DBDriver::open inspects the token, 
+realizes that user code must not proceed, and throws an 
+InvalidPermissionException.
 
-    Thread 1                                          Thread 2
+Thread 1                                          Thread 2
 
     8. DBDriver.newConnection()                       8. InvalidPermissionException()
     7. DBDriver.open() <----------------------+       7. DBDriver.open() <----------------------+
