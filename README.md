@@ -1,602 +1,270 @@
-# Extent-local variables
+Summary
+-------
 
-## Summary
+Introduce _extent-local variables_, which enable the sharing of immutable data within and across threads. They are preferred to thread-local variables, especially when using large numbers of virtual threads. This is an [incubating API](https://openjdk.org/jeps/11).
 
-Introduce extent-local variables to the Java Platform. Extent-local
-variables provide a way to share immutable data within and across
-threads. They are preferred to thread-local variables, especially when
-using large numbers of virtual threads. This is a preview API.
 
-## Goals
+Goals
+-----
 
-- *Ease of use* — Provide a clear programming model to share data
-  within and across threads in order to simplify reasoning about
-  data flow.
-- *Comprehensibility* — Make the lifetime of shared data
-  clearly visible in the program code.
-- *Robustness* — Ensure that data shared by a caller
-   is accessible only to legitimate callees.
-- *Performance* — Treat shared data as immutable so as to allow
-  sharing among large numbers of threads. Also, this immutability
-  greatly helps optimizing compilers.
+- *Ease of use* — Provide a programming model to share data both within a thread and with child threads, so as to simplify reasoning about data flow.
+
+- *Comprehensibility* — Make the lifetime of shared data visible from the syntactic structure of code.
+
+- *Robustness* — Ensure that data shared by a caller can be retrieved only by legitimate callees.
+
+- *Performance* — Treat shared data as immutable so as to allow sharing by a large number of threads, and to enable runtime optimizations.
+
 
 ## Non-Goals
 
-It is not a goal to change the Java Programming Language.
+- It is not a goal to change the Java programming language.
 
-It is not a goal to require migration away from thread-local
-variables or to deprecate the `ThreadLocal` API.
+- It is not a goal to require migration away from thread-local variables, or to deprecate the existing `ThreadLocal` API.
 
-It is not a goal for this new programming model to require use
-of try-with-resources or interface `AutoCloseable`.
 
 ## Motivation
 
-Java developers often rely on frameworks that contain distinct but 
-complementary components. For example, a framework may provide a server 
-component that handles requests by running user code; a database driver 
-that handles persistence; and a logger that integrates events from user 
-code and framework code.
+Large Java programs typically consist of distinct and complementary components that need to share data between themselves. For example, a web framework might include a server component, implemented in the _[thread-per-request style](https://openjdk.java.net/jeps/425#The-thread-per-request-style)_, and a data access component, which handles persistence. Throughout the framework, user authentication and authorization relies on a `Principal` object shared between components. The server component creates a `Principal` for each thread that handles a request, and the data access component refers to a thread's `Principal` to control access to the database.
 
-Framework components need to share data between themselves, independent 
-from the user code that they support. For example, the server component 
-could create a Permissions token for each thread that handles a request, 
-and other components could inspect the token to restrict access to the 
-services they provide to user code.
+The diagram below shows the framework handling two requests, each in its own thread. Request handling flows upward, from the server component (`Server.serve(...)`) to user code (`Application.handle(...)`) to the data access component (`DBAccess.open()`). The data access component determines whether the thread is permitted to access the database, as follows:
 
-Normally, code in a thread communicates data from caller to callee via 
-method arguments. However, this is not viable when the server component 
-calls user code provided by the application developer. The server 
-component needs a private channel to share the Permissions token with 
-the database driver and the logger.
+- In Thread 1, the `ADMIN` principal created by the server component allows database access. The dashed line indicates the principal is to be shared with the data access component, which inspects it and proceeds to call `DBAccess.newConnection()`.
 
-The following diagram shows the server component handling two requests, 
-each in its own thread. Request handling starts with a call to 
-Server::processRequest, which delegates to user code, which eventually 
-tries to use a database connection by calling DBDriver::open. At this 
-point, DBDriver must determine whether the thread is permitted to access 
-the database:
+- In Thread 2, the `GUEST` principal created by the server component does not allow database access. The data access component inspects the principal, determines that the user code must not proceed, and throws an `InvalidPrincipalException`.
 
-- In Thread 1, the Permissions token created by Server::processRequest 
-allows database access. The dashed line indicates the token is shared 
-with DBDriver::open, which inspects the token and proceeds to call 
-DBDriver::newConnection.
-
-- In Thread 2, the Permissions token created by Server::processRequest 
-does not allow database access. DBDriver::open inspects the token, 
-realizes that user code must not proceed, and throws an 
-InvalidPermissionException.
-
+<a name="Web-framework-example-Initial-extents"></a>
 ```
-Thread 1                                          Thread 2
-
-    8. DBDriver.newConnection()                       8. InvalidPermissionException()
-    7. DBDriver.open() <----------------------+       7. DBDriver.open() <----------------------+
-       ...                                    |          ...                                    |
-       ...                     Permissions(DATABASE)     ...                       Permissions(NONE)
-    2. Application.handleRequest()            |       2. Application.handleRequest()            |
-    1. Server.processRequest() ---------------+       1. Server.processRequest() ---------------+
+Thread 1                                 Thread 2
+--------                                 --------
+8. DBAccess.newConnection()              8. throw new InvalidPrincipalException()
+7. DBAccess.open() <----------+          7. DBAccess.open() <----------+
+   ...                        |             ...                        |
+   ...                  Principal(ADMIN)    ...                  Principal(GUEST)
+2. Application.handle(..)     |          2. Application.handle(..)     |
+1. Server.serve(..) ----------+          1. Server.serve(..) ----------+
 ```
+
+Normally, data is shared between caller and callee by passing it as method arguments, but this is not viable for a `Principal` shared between the server component and the data access component because the server component calls untrusted user code first. We need a better way to share data from the server component to the data access component than wiring it into a cascade of untrusted method invocations.
 
 ### Thread-local variables for sharing
 
-Framework components traditionally use a _thread-local variable_ as a 
-private channel for sharing data. A thread-local variable is a field of 
-type ThreadLocal, with the special property that each thread which 
-accesses the field sees its own, thread-specific value of the field.
+Developers have traditionally used _thread-local variables_, introduced in Java 1.2, to help components share data without resorting to method arguments. A thread-local variable is a variable of type [`ThreadLocal`](https://docs.oracle.com/en/java/javase/18/docs/api/java.base/java/lang/ThreadLocal.html). Despite looking like an ordinary variable, a thread-local variable has multiple incarnations, one per thread; the particular incarnation that is used depends on which thread calls its `get()` or `set(...)` methods to read or write its value. Code in one thread automatically reads and writes its incarnation, while code in another thread automatically reads and writes its own distinct incarnation. Typically, a thread-local variable is declared as a `final` `static` field so it can easily be reached from many components.
 
-Here is an example of how the server component and database driver might 
-use a thread-local variable.
+Here is an example of how the server component and the data access component, both running in the same request-handling thread, can use a thread-local variable to share a `Principal`. The server component first declares a thread-local variable, `PRINCIPAL` (1). When `Server.serve(...)` is executed in a request-handling thread, it writes a suitable `Principal` to the thread-local variable (2), then calls user code. If and when user code calls `DBAccess.open()`, the data access component reads the thread-local variable (3) to obtain the `Principal` of the request-handling thread. Only if the `Principal` indicates suitable permissions is database access permitted (4).
 
-    class Server {
-      // 1. Provide a per-thread channel between the framework and its components
-      final static ThreadLocal<Permissions> PERMISSIONS = ...;
-      ...
-      void processRequest(Request request, Response response) {
-        int p = (request.isAuthorized() ? DATABASE : NONE);
-        Permissions permissions = new Permissions(p);
-        // 2. Set permissions for request thread and run app logic
-        PERMISSIONS.set(permissions);
-        Application.handleRequest(request, response);
-      }
-      ...
+<a name="Web-framework-example-ThreadLocal-code"></a>
+```
+class Server {
+    final static ThreadLocal<Principal> PRINCIPAL = new ThreadLocal<>();  // (1)
+
+    void serve(Request request, Response response) {
+        var level     = (request.isAuthorized() ? ADMIN : GUEST);
+        var principal = new Principal(level);
+        PRINCIPAL.set(principal);                                         // (2)
+        Application.handle(request, response);
     }
+}
 
-    class DBDriver {
-      DBConnection open(...) throws PermissionException {
-        // 3. Get permissions for request thread and check
-        Permissions permissions = Server.PERMISSIONS.get();
-        if (!permissions.allowed(DATABASE) throw new  PermissionException();
-        // 4. Ok to connect to a database
-        return DBDriver.newConnection(...);
-      }
-      ...
+class DBAccess {
+    DBConnection open() {
+        var principal = Server.PRINCIPAL.get();                           // (3)
+        if (!principal.canOpen()) throw new InvalidPrincipalException();
+        return newConnection(...);                                        // (4)
     }
+}
+```
 
-The `ThreadLocal` declared at 1. in the static field `PERMISSIONS` provides a
-way to ensure that each thread handling a request can have its own independent
-permissions. This `ThreadLocal` serves as a key that is used to look up
-a `Permission` value for the current thread. So, there is not exactly _one_
-incarnation of field `PERMISSIONS` shared across all instances of `Server`; instead, there are
-_multiple_ incarnations of the field, one per thread, and the incarnation
-that is used when code sets or gets `PERMISSIONS`
-depends on the thread which is executing the code.
+Using a thread-local variable avoids the need to pass a `Principal` as a method argument when the server component calls user code, and when user code calls the data access component. The thread-local variable serves as a kind of hidden method argument: A thread which calls `PRINCIPAL.set(...)` in `Server.serve(...)` and then `PRINCIPAL.get()` in `DBAccess.open()` will automatically see its own incarnation of the `PRINCIPAL` variable. In effect, the `ThreadLocal` field serves as a key that is used to look up a `Principal` value for the current thread.
 
-Using a thread-local variable here avoids the need to pass a `Permissions` object as
-an argument to calls from the service handler through the business logic
-and into the database driver or logger.
+### Problems with thread-local variables
 
-The declaration at 1. creates a `ThreadLocal` object and assigns it to static field
-`PERMISSIONS`. Before it can be used, the `Server` handler thread must call the `set()`
-method at 2. This ensures that the incarnation of field
-`PERMISSIONS` specific to the handler thread identifies the permissions
-for that request. The server is now ready to execute the business logic.
+Unfortunately, thread-local variables have numerous design flaws that are impossible to avoid:
 
-The database driver calls the `get()` method at 3. to
-retrieve the permissions for the current thread. It ensures that the
-operation requested by the business logic is permitted before proceeding
-to execute it at 4.
+- *Unconstrained mutability*  —  Every thread-local variable is mutable: Any code that can call the `get()` method of a thread-local variable can call the `set(...)` method of that variable at any time. The `ThreadLocal` API allows this in order to support a fully general model of communication, where data can flow in any direction between components. However, this can lead to spaghetti-like data flow, and to programs in which it is hard to discern which component updates shared state and in what order. The more common need, shown in the example above, is a simple one-way transmission of data from one component to others.
 
-This example demonstrates that thread-local variables _can_ be used to implement the
-behaviour needed for this case. However, there are problems with the design
-of thread-local variables that affect even this example of well-structured use.
+- *Unbounded lifetime* — Once a thread's incarnation of a thread-local variable is written via the `set(...)` method, the incarnation is retained for the lifetime of the thread, or until code in the thread calls the `remove()` method. Unfortunately, developers often forget to call `remove()`, so per-thread data is often retained for longer than necessary. In addition, for programs that rely on the unconstrained mutability of thread-local variables, there may be no clear point at which it is safe for a thread to call `remove()`; this can cause a long-term memory leak, since per-thread data will not be garbage-collected until the thread exits. It would be better if the writing and reading of per-thread data occurred in a bounded period during execution of the thread, avoiding the possibility of leaks.
 
-- *Unconstrained Mutability*  —  Every thread-local variable is _mutable_:
-  that is to say, any code that can access a thread-local variable's `get()` can
-  also `set()` it to a different value, or `remove()` it altogether.
-  Unconstrained mutability is prone to error or abuse. Badly designed or
-  buggy code can make it very difficult to identify where and in what
-  order state will be read and updated.
+- *Expensive inheritance* — The overhead of thread-local variables may be worse when using large numbers of threads, because thread-local variables of a parent thread can be inherited by child threads. (A thread-local variable is not, in fact, local to one thread.) When a developer chooses to create a child thread that inherits thread-local variables, the child thread has to allocate storage for every thread-local variable previously written in the parent thread. This can add significant memory footprint. Child threads cannot share the storage used by the parent thread because thread-local variables are mutable, and the `ThreadLocal` API requires that mutation in one thread is not seen in other threads. This is unfortunate, because in practice child threads rarely call the `set(...)` method on their inherited thread-local variables.
 
-  Such problems are possible even with a well-defined API like the `Server`
-  example. For example, if the `DBDriver` accidentally reset the permissions to `NONE`
-  the error would only appear the next time the business logic tried to
-  perform a database operation.
+### Toward lightweight sharing
 
-  The `ThreadLocal` API was _specified_ to provide unconstrained mutability in order to
-  support a more general model of communication than we usually need. Data is able to flow in
-  either direction between a caller and called method. This generality may be
-  needed for a few difficult cases. However, in the worst case, programming
-  with thread-local variables can lead to spaghetti-like dataflow. The result
-  is code whose structure is hard to discern, let alone maintain.
+The problems of thread-local variables have become more pressing with the availability of virtual threads ([JEP 425](https://openjdk.java.net/jeps/425)). Virtual threads are lightweight threads implemented by the JDK. Many virtual threads share the same operating-system thread, allowing for very large numbers of virtual threads. In addition to being plentiful, virtual threads are cheap enough to represent any concurrent unit of behavior. This means that a web framework can dedicate a new virtual thread to the task of handling a request and still be able to process thousands or millions of requests at once. In the ongoing example, the methods `Server.serve(...)`, `Application.handle(...)`, and `DBAccess.open()` would all execute in a new virtual thread for each incoming request.
 
-  In our example, what is really needed is a simple, one-way broadcast
-  with a single point of assignment in a caller (at 2.) and one or more
-  clear points in called code where the data is consumed (e.g. at 3.).
-  This is a very common pattern, and it is not supported well by the
-  complex API of `ThreadLocal`.
+It would obviously be useful for these methods to be able to share data whether they execute in virtual threads or traditional platform threads. Because virtual threads are instances of `Thread`, a virtual thread can have thread-local variables; in fact, the short-lived [non-pooled](https://openjdk.java.net/jeps/425#Do-not-pool-virtual-threads) nature of virtual threads makes the problem of long-term memory leaks, mentioned above, less acute. (Calling a thread-local variable's `remove()` method is unnecessary when a thread terminates quickly, since termination automatically removes its thread-local variables.) However, if each of a million virtual threads has mutable thread-local variables, the memory footprint may be significant.
 
-- *Unbounded Persistence* — Once set, a thread-local variable is _persistent_: that is
-  to say, the incarnation of the value for each thread that calls `set()` is retained
-  for the lifetime of the thread, or until a method running on that thread
-  calls `remove()`.
+In summary, thread-local variables have more complexity than is usually needed for sharing data, and significant costs that cannot be avoided. The Java Platform should provide a way to maintain immutable and inheritable per-thread data for thousands or millions of virtual threads. Because these per-thread variables would be immutable, their data could be shared by child threads efficiently. Further, the lifetime of these per-thread variables should be bounded: Any data shared via a per-thread variable should become unusable once the method that initially shared the data is finished.
 
-  Having to call `remove()` on a thread-local variable to clean it up
-  when it's no longer in use means that it is all too easy for values to persist
-  longer than is desirable. It is unfortunately common for developers to forget
-  to remove a thread-local variable.  Indeed, for programs that rely on the
-  unconstrained mutability of thread-local variable, there may be no clear point at
-  which it is safe to call `remove()`. This can lead to a long-term memory
-  leak. Even though the program may have long since moved on from having
-  any use for an object referenced from the thread-local variable, it will not be
-  garbage collected unless the thread exits.
-
-  Clearly, it would be better if the sharing of data from `set()` and
-  `get()` calls could be achieved with a well determined lifetime,
-  limiting persistence of the data to a well-bounded interval during
-  execution of the thread.
-
-- *Expensive Inheritance* — The thread-local variable persistence problem can be much worse
-  when using large numbers of threads because thread-local variables may be inherited
-  from parent to child thread. Each thread has to allocate storage for every
-  thread-local variable set in that thread. If a newly created child `Thread`
-  inherits the thread-local variable, it has to allocate its own storage. When an
-  application uses many `Thread`s and they, in
-  turn, inherit thread-local variables this can add significant memory costs.
-
-  Child threads cannot share the storage used by the parent thread because
-  thread-local variables are _mutable_. The `ThreadLocal` API requires the parent and
-  child to be able to change their own value without the change being seen
-  by the other thread. This is unfortunate because in most cases child threads
-  do not `set()` the thread-local variables they inherit.
-
-The above problems with thread-local variables have become more pressing
-in the context of virtual threads. These threads are cheap and plentiful, unlike
-today's platform threads which are expensive and scarce.
-
-Platform Threads are:
-
-* Long-running
-* Heavyweight
-* Pooled
-
-Virtual Threads are:
-
-* Short-running
-* Lightweight
-* Single-use
-
-It would certainly be useful for these numerous, cheap and plentiful
-threads to be able to access some context from their parent. For
-example, they may share a logger on an output stream. Perhaps they may
-share some kind of security policy too.
-
-Because virtual threads are still instances of `Thread`, it is legitimate for a
-virtual thread to carry thread-local variables. The problem of long-term
-memory leaks via thread locals is less acute in the case of short-lived threads.
-An explicit `remove()` isn't necessary when a thread,
-virtual or not, terminates, because when it terminates all thread-local
-variables are automatically removed. However, if you have thousands
-or millions of threads and every one has its own, inevitably mutable, set of
-thread-local variables, the memory footprint may become significant.
-
-It would be ideal if the Java Platform provided a way to have per-thread
-context for thousands or millions of virtual threads that is immutable and,
-given the low cost of forking virtual threads, inheritable. Because
-these ideal per-thread variables are immutable, their data can be
-easily shared by child threads, rather than copied to child
-threads.
-
-It would also be better if the extent of these variables was strongly
-and robustly bounded. If it were so, you could open some resource,
-share it as context with callees and other threads, and on return
-close that resource. You could be certain that all users would have
-finished whatever they needed to do, so closing the shared resource
-would be safe.
-
-Thread-local variables were the 90s realization of per-thread
-variables; we need a better realization of per-thread variables for
-the modern era.
-
-To sum up, thread-local variables offers more complexity than is
-needed by many applications and come with some significant costs. The
-Java Platform needs a way to share context that
-
-* *Is immutable*: has a one-way channel from caller to callee.
-
-* *Has bounded persistence*: once the caller sharing the context
-  exits, any shared context can no longer be accessed.
-
-* *Is cheap to inherit*: ideally, sharing context with child threads
-  should not add any overhead to thread creation.
 
 ## Description
 
-An extent-local variable is a per-thread variable that allows context
-to be set in a caller and read by callees. Context can be anything from
-a business object to an instance of a system-wide logger. Unlike a
-thread-local variable, an extent-local variable is immutable: there is
-no `set()`method.
+An _extent-local variable_ allows data to be safely and efficiently shared between components in a large program without resorting to method arguments. It is a variable of type [`ExtentLocal`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/ExtentLocal.html). Typically, it is declared as a `final` `static` field so it can easily be reached from many components.
 
-The term _extent-local_ derives from the idea of an extent in the Java
-Virtual Machine. The JVM specification describes an _extent_ as follows:
+Like a thread-local variable, an extent-local variable has multiple incarnations, one per thread. The particular incarnation that is used depends on which thread calls its methods. Unlike a thread-local variable, an extent-local variable is written once and is then immutable, and is available only for a bounded period during execution of the thread.
 
-"It is often useful to describe the situation where, in a given
-thread, a given method m1 invokes a method m2, which invokes a method
-m3, and so on until the method invocation chain includes the current
-method mn. None of m1..mn have yet completed; all of their frames are
-still stored on the Java Virtual Machine stack (2.5.2). Collectively,
-their frames are called an _extent_. The frame for the current method
-mn is called the _top most frame_ of the extent. The frame for the
-given method m1 is called the _bottom most frame_ of the extent."
+An extent-local variable is used as shown below. Some code calls `ExtentLocal.where(...)` to _bind_ a value to the current thread's incarnation of the variable for the lifetime of the call to the `run(...)` method in that thread. The lambda expression passed to the `run(...)` method, and any method called directly or indirectly from that lambda expression, can read the extent-local variable via its `get()` method. After the `run(...)` method finishes, the binding is destroyed.
 
-That is to say, m1's extent is the set of methods m1 invokes, and any
-methods invoked transitively by them.
+```
+final static ExtentLocal<...> V = new ExtentLocal<>();
 
-It should now be clear that the thread call stack diagram above is
-a picture of two separate extents for two different threads.
-In both cases the bottom frame of the extent is a call to method
-`Server.processRequest()`. In Thread 1 the top frame is a call to
-method `DBDriver.newConnection()` while in Thread 2 it is a call to
-constructor `InvalidPermissionException()`
+// In some method
+ExtentLocal.where(V, <value>)
+           .run(() -> { ... V.get() ... call methods ... });
 
-The value associated with an extent-local variable is defined in the
-bottom most frame of some extent, and is accessible in every frame of
-that extent. The extent-local variable is *bound* to the value.
+// In a method called directly or indirectly from the lambda expression
+... V.get() ...
+```
 
-###  Example Use Of Extent-Local Variables
+The syntactic structure of the code delineates the period of time when a thread can read its incarnation of an extent-local variable. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the extent-local variable at any time. Immutability also helps performance: Reading an extent-local variable with `get()` is usually as fast as reading a local variable, regardless of the stack distance between caller and callee.
 
-The `Server` example described above can easily be rewritten to
-use class `ExtentLocal` instead of `ThreadLocal`.
+### The meaning of "extent"
 
-     class Server {
-      // 1. Provide a per-thread channel betwen the framework and its components
-      final static ExtentLocal<Permissions> PERMISSIONS = ...;
-      ...
-      void processRequest(Request request, Response response) {
-        int p = (request.isAdmin() ? LOG|DATABASE : LOG);
-        Permissions permissions = new Permissions(p);
-        // 2. Bind the extent local and run the request handler
-        ExtentLocal.where(PERMISSIONS, permissions)
-                     .run(() -> { Application.handleRequest(request, response); });
-      }
-      ...
+The term _extent-local variable_ draws on the concept of an _extent_ in the Java Virtual Machine, to appear in the JVM Specification as follows:
+
+> It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
+
+Accordingly, an extent-local variable that is written in `m1` (associated with the bottom most frame of the extent) can be read in `m2`, `m3`, and so on up to `mn` (associated with the top most frame of the extent).
+
+The [diagram shown earlier](#Web-framework-example-Initial-extents), of two threads executing code from different components, depicts two extents. In both extents, the bottom most frame belongs to the method `Server.serve(...)`. In the extent for Thread 1, the top most frame belongs to `DBAccess.newConnection(...)`, while for Thread 2 the top most frame belongs to the constructor of `InvalidPrincipalException`.
+
+###  Web framework example with extent-local variables
+
+The framework code shown earlier can easily be rewritten to use an extent-local variable instead of a thread-local variable. At (1), the server component declares an extent-local variable instead of a thread-local variable. At (2), the server component calls `ExtentLocal.where(...)` and `run(...)` instead of a thread-local variable's `set(...)` method.
+
+<a name="Web-framework-example-ExtentLocal-code"></a>
+```
+class Server {
+    final static ExtentLocal<Principal> PRINCIPAL = new ExtentLocal<>();   // (1)
+    
+    void serve(Request request, Response response) {
+        var level     = (request.isAdmin() ? ADMIN : GUEST);
+        var principal = new Principal(level);
+        ExtentLocal.where(PRINCIPAL, principal)                            // (2)
+                   .run(() -> Application.handle(request, response));
     }
+}
 
-    class DBDriver {
-      DBConnection open(...) throws PermissionException {
-        // 3. Get permissions for request thread and check
-        Permissions permissions = Server.PERMISSIONS.get();
-        if (!permissions.allowed(DATABASE) throw new  PermissionException();
-        // 4. Ok to connect to a database
-        return DBDriver.newConnection(...);
-      }
-      ...
+class DBAccess {
+    DBConnection open() {
+        var principal = Server.PRINCIPAL.get();                            // (3)
+        if (!principal.canOpen()) throw new  InvalidPrincipalException();
+        return newConnection(...);
     }
+}
+```
 
-As before, the `Server` includes an initialization at 1. which
-ensures that field `PERMISSIONS` references an `ExtentLocal`. The important
-difference occurs at point 2. where previously there was a call to
-`ThreadLocal.set()`. This is changed to use a call to methods
-`where()` and `run()` of class `ExtentLocal`. These two calls work
-together to provide the immutable one-way, thread-local communication
-that the application needs.
+Together, `where(...)` and `run(...)` provide the one-way sharing of data from the server component to the data access component. The `where(...)` call binds the extent-local variable for the lifetime of the `run(...)` call, so `PRINCIPAL.get()` in any method called from `run(...)` will read the value bound by `where(...)`. Accordingly, when `Server.serve(...)` calls user code, and user code calls `DBAccess.open()`, the value read from the extent-local variable (3) is the value written by `Server.serve(...)` earlier in the thread.
 
-The `where()` call  *binds* `the ExtentLocal` referenced from `PERMISSIONS`
-for the extent of the `run()` call. That means a call to
-`PERMISSIONS.get()` executed by any method called from `run()` will return
-the value passed to `where()`. So, in this case, if
-`DBDriver.open()` gets called, directly or indirectly, by method
-`Application.handleRequest()` then the `PERMISSIONS` retrieved at point 3.
-will be value passed in the `where()` call at point 2.
+The binding established by `where(...)` is usable only in code called from `run(...)`. If `PRINCIPAL.get()` appeared in `Server.serve(...)` after the call to `run(...)`, an exception would be thrown because `PRINCIPAL` is no longer bound in the thread.
 
-It also means that the value retrieved by the `get()` call is specific
-to whichever thread is executing the methods. As with `ThreadLocal`, an
-extent-local variable has an incarnation that is per thread.
+###  Rebinding extent-local variables
 
-The first big difference between this example and the previous one
-is that the binding established by `where()` is only
-accessible within the extent of the code called from `run()`. If a call to
-`PERMISSIONS.get()` was inserted after the call to `run()` an exception
-would be thrown because `PERMISSIONS` is no longer bound. 
+The immutability of extent-local variables means that a caller can use an extent-local variable to reliably communicate a constant value to its callees in the same thread. However, there are occasions when one of the callees might need to use the same extent-local variable to communicate a different value to its own callees in the thread. The `ExtentLocal` API allows a new binding to be established for nested calls.
 
-**The syntax for employing an `ExtentLocal` enforces a well defined
-lifetime for data sharing, unlike the unbounded persistence provided
-by `ThreadLocal`. The values of extent-local variables are only shared
-in the extent of `run()`, and never shared - accidentally
-or deliberately - outside that extent.**
+As an example, consider a third component of the web framework: a logging component with a method `void log(Supplier<String> formatter)`. User code passes a lambda expression to the `log(...)` method; if logging is enabled, the method calls `formatter.get()` to evaluate the lambda expression and then prints the result. Although the user code may have permission to access the database, the lambda expression should not, since it only needs to format text. Accordingly, the extent-local variable that was initially bound in `Server.serve(...)` should be rebound to a guest `Principal` for the lifetime of `formatter.get()`:
 
-The second big difference from the previous example
-is that the binding established by `where()` is
-immutable within the extent of `run()`. Methods called from `run()` can
-`get()` the current binding but there is no `set()` method allowing them
-to change the binding established at point 1.
+<a name="Web-framework-example-Rebinding-extent"></a>
+```
+8. InvalidPrincipalException()
+7. DBAccess.open() <--------------------------+  X---------+
+   ...                                        |            |
+   ...                                  Principal(GUEST)   |
+4. Supplier.get()                             |            |
+3. Logger.log(() -> { DBAccess.open(); }) ----+      Principal(ADMIN)
+2. Application.handle(..)                                  |
+1. Server.serve(..) ---------------------------------------+
+```
 
-Note that the `DBDriver` method looks identical. The difference is that
-the call to `get()` is invoking a method belonging to `ExtentLocal` not
-`ThreadLocal`.
+Here is the code for `log(...)` with rebinding. It obtains a guest `Principal` (1) and rebinds the extent-local variable `PRINCIPAL` to the guest value (2). For the lifetime of the invocation of `call` (3), `PRINCIPAL.get()` will read this new value. Thus, if the user code passes a malicious lambda expression to `log(...)` that performs `DBAccess.open()`, the check in `DBAccess.open()` will read the guest `Principal` from `PRINCIPAL` and throw an `InvalidPrincipalException`.
 
-**The properties of immutability and locally-defined extent make it
-easier for a reader to reason about programs, in much the same way
-that declaring a field of a variable `final` does. The one-way nature
-of the channel from caller to callee makes it much easier to reason
-about the flow of data in a program.**
-
-**Also, in most cases an extent-local variable `x.get()` is as fast
-as a local variable `x`. This is true regardless of how far away
-`x.get()` is from the point that the extent-local variable `x` is
-bound.**
-
-###  Rebinding of Extent-Local Variables
-
-The immutability of extent-local bindings means that a caller can  use
-an `ExtentLocal` to reliably communicate a constant value to the methods it calls.
-However, there are times when one of those called methods might
-need to use the same extent-local variable to communicate a different
-value to the methods *it* calls. The
-requirement is not to change the original binding but to establish a new
-binding for nested calls.
-
-As an example consider this API method of the framework `Logger`
-class.
-
-    public void log(Supplier<String> formatter);
-
-This method formats and prints a log message when logging is enabled.
-If logging is disabled it prints nothing. The caller passes in a `Supplier`
-argument whose `get()` method is called by `log()` to retrieve the message
-text. Using a `Supplier` avoids the cost of formatting when logging is
-disabled.
-
-`log()` is a good candidate for the use of rebinding. The `Logger` is called
-from business logic code that may have permission to access the database.
-However, the `Supplier` that gets executed by the `Logger` only needs to do
-text formatting. It should not need to do call any of the components to
-do something that requires permissions.
-It would be ideal if the extent-local variable `PERMISSIONS` was bound
-to an empty `Permissions` instance for the extent of the `formatter.get()` call.
-
-The code for method `log()` is shown below.
-
-    class Logger {
-      void log(Supplier<String> formatter) {
+```
+class Logger {
+    void log(Supplier<String> formatter) {
         if (loggingEnabled) {
-          // 1. Obtain an empty permissions instance
-          Permissions nopermission = Permissions.none();
-          // 2. Rebind PERMISSIONS for extent of formatter get
-          String message = ExtentLocal.where(Server.PERMISSIONS, nopermission)
-                                  .call(() -> formatter.get());
-          // 3. Print the formatted message
-          write(logFile, "%s %s".format(timeStamp(), message));
-          ...
-
-The logger obtains an empty `Permissions` instance at point 1.
-At point 2. `where()` rebinds extent-local `PERMISSIONS`
-to this empty `Permissions` instance for the extent of the `call()` that
-follows it. The lambda passed as argument to `call()` invokes `formatter.get()`
-to retrieve the formatted message.  If code called from `formatter.get()`
-tries to use the database, the permissions check in the `DBDriver` code will
-retrieve the empty `Permission` instance, leading to a `InvalidPermissionException`.
-
-Notice that this example uses the paired methods `where()` and `call()`,
-whereas the previous example used `where()` and `run()`. That is because in
-this example the code executed below `call()` needs to return a result.
-The `String` returned by `formatter.get()` is returned from `call()` and used to
-bind local variable `message`. `call()` must be passed an argument that returns a
-result. `run()` must be passed an argument that does not return a result.
-
-Once again it is clear that the syntax of `ExtentLocal` reinforces the guarantee
-of a well defined lifetime for sharing, by limiting rebinding to a nested extent,
-i.e. to the lifetime of the call to `formatter.get()`, with no possibility of
-changing the binding in the current extent.
-
-###  Inheritance of Extent-Local Variables
-
-There are occasions where it would be useful for an extent-local variable
-to be inherited from parent thread to child thread, for much the same
-reasons as it is useful to inherit a thread-local variables. This works with
-extent-local variables in a way that avoids many of the problems that
-arise when using a thread-local variable.
-
-An example use of inheritance is provided by the following method
-from the business logic.
-
-    public void processQueryList(List<DBQuery> queries, Consumer<DBQuery> handler);
-
-Method `processQueryList` executes a list of `queries` against the database.
-Argument `handler` is a `Consumer<DBQuery>` that is used run each individual
-query. That means it can be applied to each`DBQuery` in list `queries` by
-calling `handler.apply(query)`.
-
-In order to speed up processing of query results, each call to `apply` is executed
-in its own virtual thread.  So, the binding of `PERMISSIONS` for
-the caller thread really needs to be inherited by the child virtual thread that
-executes `handler`. Inheritance happens automatically because the implementation
-of `processQueryList` uses the structured execution framework.
-
-The code for method `processQueryList` is provided below.
-
-      void processQueryList(List<DBQuery> queries Consumer<DBQuery> handler) {
-        / 1. Parallelize calls to handler with a structured fork join executor
-        try (var s = StructuredExecutor.open()) {
-          for (var query : queries) {
-            // 2. process each query in its own virtual thread
-            s.fork(() -> handler.apply(query));
-          }
-          // 3. wait for all virtual threads to complete
-          s.join();
+            var guest = Principal.createGuest();                      // (1)
+            var message = ExtentLocal.where(Server.PRINCIPAL, guest)  // (2)
+                                     .call(() -> formatter.get());    // (3)
+            write(logFile, "%s %s".format(timeStamp(), message));
         }
-      }
+    }
+}
+```
 
-At 1., `processQuery` uses try-with-resources to
-open a `StructuredExecutor`. This is a class provided as part of the virtual
-threads implementation which allows a collections of virtual threads to be
-managed using a fork join model. It gets automatically closed at the end of
-the try with resources block.
+(We here use `call(...)` instead of `run(...)` to invoke the formatter because the result of the lambda expression is needed.)
 
-Inside the `for` loop at 2. a virtual thread is forked to run the handler on
-the current `DBQuery`. After the for loop at 2. a call to `join()` ensures that
-all the forked virtual threads have completed. This ensures that all rows
-have been processed before the try block is exited.
+The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the nested extent. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `call(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
-There is one important detail in the `processQuery` code that still needs
-explaining. The call to `handler.apply()` happens in a forked
-virtualThread. So, how can a call to `PERMISSIONS.get()` in the forked thread
-retrieve the value that was `set()` in the forking thread? This works because
-Class `ExtentLocal` has been designed to share bindings across thread forks.
-Any extent-local bindings present in the thread that calls `fork()` will be
-visible to the forked thread.
+###  Inheriting extent-local variables
 
-It is worth emphasising that these bindings really are *shared*. The forked
-thread can reference the set of bindings established by the forking thread
-without needing its own local copy.
+The web framework example dedicates a thread to handling each request, so the same thread can execute framework code from the server component, then user code from the application developer, then more framework code from the data access component. However, user code can exploit the lightweight nature of virtual threads by creating its own virtual threads and running its own code in them. These virtual threads will be child threads of the request-handling thread.
 
-It is also worth noting that the fork/join model offered by `StructuredExecutor`
-means that a value bound in the call to to `where()` has a determinate lifetime,
-as far as visibility via the `ExtentLocal` is concerned. The `Permission`
-object is available while the child thread is running. The call to `join()`
-at the end of the try block ensures that child threads can no longer be using
-it. These two capabilities work together to avoid the problem of unbounded
-persistence seen when using thread-local variables.
+Data shared by a component running in the request-handling thread needs to be available to components running in child threads. Otherwise, when user code running in a child thread calls the data access component, that component — now also running in the child thread — will be unable to check the `Principal` shared by the server component running in the request-handling thread. To enable cross-thread sharing, extent-local variables can be inherited by child threads.
 
-Using class StructuredExecutor to parallelise row processing means that query
-results returning thousands or even millions of rows can be executed in
-parallel. If a call to `rowHandler` needs to block, say to log a warning to
-a file on disk, work can continue by switching execution to another virtual
-thread with almost no overhead.
+The preferred mechanism for user code to create virtual threads is the Structured Concurrency API ([JEP 428](https://openjdk.java.net/jeps/428)), specifically the class [`StructuredTaskScope`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/StructuredTaskScope.html). Extent-local variables in the parent thread are automatically inherited by child threads created with `StructuredTaskScope`. Code in a child thread can use bindings established for an extent-local variable in the parent thread with minimal overhead. Unlike with thread-local variables, there is no copying of a parent thread's extent-local bindings to the child thread.
 
-**Extent-local variables are automatically inherited by threads
-created by a `StructuredExecutor` with very little overhead.**
+Here is an example of extent-local inheritance occurring behind the scenes in user code, in a variant of the `Application.handle(...)` method called from `Server.serve(...)`. The user code calls `StructuredTaskScope.fork(...)` (1, 2) to run the `findUser()` and `fetchOrder()` methods concurrently, in their own virtual threads. Each method calls the data access component (3), which as before consults the extent-local variable `PRINCIPAL` (4). Further details of the user code are not discussed here; see [JEP 428](https://openjdk.java.net/jeps/428#Description) for information.
 
-## Migrating to extent-local variables
+```
+class Application {
+    Response handle() throws ExecutionException, InterruptedException {
+        try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+            Future<String>  user  = scope.fork(() -> findUser());          // (1)
+            Future<Integer> order = scope.fork(() -> fetchOrder());        // (2)
+            scope.join().throwIfFailed();  // Wait for both forks
+            return new Response(user.resultNow(), order.resultNow());
+        }
+    }
 
-In general, for the reasons we've listed above, extent-local variables
-are likely to be useful in many cases where thread-local variables are
-used today. We continue to support thread-local variables, even with
-virtual threads, despite them not being ideal when threads are very
-numerous.
+    String findUser() {
+        ... DBAccess.open() ...                                            // (3)
+    }
+}
 
-The first thing to do is determine whether migrating thread-local to
-extent-local variables is appropriate. If in your application thread
-local variables are used in an unstructured way so that a deep callee
-`set()`s a thread-local variable which is then retrieved by the caller,
-migration may be difficult, and you may find there is little to be
-gained.
+class DBAccess {
+    DBConnection open() {
+        var principal = Server.PRINCIPAL.get();                            // (4)
+        if (!principal.canOpen()) throw new  InvalidPrincipalException();
+        return newConnection(...);
+    }
+}
+```
 
-However, in many cases extent-local variables are exactly what you
-need. We've already covered hidden parameters for callbacks in some
-depth, but there are other good ways to use extent locals.
+`StructuredTaskScope.fork(...)` ensures that the binding of the extent-local variable `PRINCIPAL` made in the request-handling thread — [when `Server.serve(...)` called `ExtentLocal.where(...)`](#Web-framework-example-ExtentLocal-code) — is automatically visible to `PRINCIPAL.get()` in the child thread. The following diagram shows the cross-thread extent of the extent-local variable:
 
-- *Re-entrant code* — Sometimes you want to be able to
-  detect recursion, perhaps because a framework isn't re-entrant or
-  because you want to limit recursion in some way. An extent-local
-  variable provides a way to do this: set it once, invoke a method,
-  and somewhere deep in the call stack, call `ExtentLocal.isBound()` to see if the
-  thread-local variable is set. More elaborately, you might want the
-  extent-local variable to be a recursion counter.
+<a name="Web-framework-example-Inheritance-extent"></a>
+```
+Thread 1                           Thread 2
+--------                           --------
+                                   8. DBAccess.newConnection()
+                                   7. DBAccess.open() <----------+
+                                   ...                           |
+                                   ...                     Principal(ADMIN)
+                                   4. Application.findUser()     |
+3. StructuredTaskScope.fork(..)                                  |
+2. Application.handle(..)                                        |
+1. Server.serve(..) ---------------------------------------------+
+```
 
-- *Nested transactions* — The detection of recursion would also be useful in the case of flattened
-  transactions: any transaction started while a transaction is in progress
-  becomes part of the outermost transaction.
+The fork/join model offered by `StructuredTaskScope` means that the value bound by `ExtentLocal.where(...)` has a determinate lifetime. The `Principal` is available while the child thread is running, and `scope.join()` ensures that child threads terminate and thus no longer use it. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
 
-- *Graphics contexts* — Another example occurs in graphics, where there is a drawing context.
-  extent-local variables, because of their automatic cleanup and
-  re-entrancy, are better suited to this than are thread-local
-  variables.
+### Migrating to extent-local variables
 
-In general, where the pattern of usage of a thread-local variable
-corresponds well with extent-local variables, it's a good idea to
-switch to them, for the reasons we've described above.
+Extent-local variables are likely to be useful and preferable in many scenarios where thread-local variables are used today. Beyond serving as hidden method arguments, extent-local variables may assist with:
 
-## Where can extent-local variables _not_ replace thread-local variables?
+- *Re-entrant code* — Sometimes it is desirable to detect recursion, perhaps because a framework is not re-entrant or because recursion must be limited in some way. An extent-local variable provides a way to do this: Set it up as usual, with `ExtentLocal.where(...)` and `run(...)`, and then deep in the call stack, call `ExtentLocal.isBound()` to check if it has a binding for the current thread. More elaborately, the extent-local variable can model a recursion counter by being repeatedly rebound.
 
-There are cases where thread-local variables are more appropriate than
-extent-local variables. For example, one popular use of thread-local variables
-is to cache objects that are expensive to create. A notorious
-example is `java.text.DateFormat`, which is mutable so cannot be
-shared between threads without synchronization. In this case, creating
-a thread-local `DateFormat` object which persists for the lifetime of
-the thread might be exactly what you need:
+- *Nested transactions* — Detecting recursion can also be useful in the case of flattened transactions: Any transaction started while a transaction is in progress becomes part of the outermost transaction.
 
-(In hindsight, making `DateFormat` mutable was a mistake, and we'd do
-better today, but it was Java 1.1 in 1997. A thread-local variable
-makes it possible to use this utility class reasonably efficiently in
-a multi-threaded program.)
+- *Graphics contexts* — Another example occurs in graphics, where there is often a drawing context to be shared between parts of the program. Extent-local variables, because of their automatic cleanup and re-entrancy, are better suited to this than thread-local variables.
 
-## API
+In general, we advise migration to extent-local variables when the purpose of a thread-local variable aligns with the goal of an extent-local variable: one-way transmission of unchanging data. If a codebase uses thread-local variables in a two-way fashion — where a callee deep in the call stack transmits data to a faraway caller via `ThreadLocal.set(...)` — or in a completely unstructured fashion, then migration is not an option.
 
-There is more detail in the Javadoc for the API, at
-
-http://people.redhat.com/~aph/loom_api/jdk.incubator.concurrent/jdk/incubator/concurrent/ScopeLocal.html
+There are a few scenarios that favor thread-local variables. An example is caching objects that are expensive to create and use, such as instances of `java.text.DateFormat`. Notoriously, a `DateFormat` object is mutable, so it cannot be shared between threads without synchronization. Giving each thread its own `DateFormat` object, via a thread-local variable that persists for the lifetime of the thread, is often a practical approach.
 
 ## Alternatives
 
-It is possible to emulate many of the features of extent-local variables with
-thread-local variables, albeit at some cost in memory footprint,
-security, and performance.
+It is possible to emulate many of the features of extent-local variables with thread-local variables, albeit at some cost in memory footprint, security, and performance.
 
-We have experimented with a modified version of Class `ThreadLocal` that
-supports some of the characteristics of extent-local variables. However,
-carrying the additional baggage of thread-local variables results in an
-implementation that is unduly burdensome, or an API that returns
-`UnsupportedOperationException` for much core functionality, or both.
-And we'd still have the problem of memory management.
+We experimented with a modified version of `ThreadLocal` that supports some of the characteristics of extent-local variables. However, carrying the additional baggage of thread-local variables results in an implementation that is unduly burdensome, or an API that returns `UnsupportedOperationException` for much of its core functionality, or both. It is better, therefore, not to modify `ThreadLocal` but to introduce extent-local variables as an entirely separate concept.
 
-It is better, therefore, not to modify Class `ThreadLocal` but to give
-extent-local variables an extirely separate identity.
-
-## Historical Note
-
-The idea for extent-local variables was inspired by the way many Lisp dialects
-provide support for dynamically scoped free variables, in particular
-how they behave in a deep-bound, multi-threaded runtime like Interlisp-D.
+Extent-local variables were inspired by the way that many Lisp dialects provide support for dynamically scoped free variables; in particular, how such variables behave in a deep-bound, multi-threaded runtime such as Interlisp-D. Extent-local variables improve on Lisp's free variables by adding type safety, immutability, encapsulation, and efficient access within and across threads.
