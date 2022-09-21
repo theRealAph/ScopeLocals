@@ -129,22 +129,21 @@ The syntactic structure of the code delineates the period of time when a thread 
 
 ### The meaning of "scoped"
 
-The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, it is different in that it is dynamically (rather than statcally) scoped..
+The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, it is different in that it is dynamically (rather than statcally) scoped.
 
 The term _scope_ is defined thus in the _Java Language Specification_: 
 
 > The scope of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed.
 
-This is commonly referred to as a _static_ (or _lexical_) scope_. However, the scope in which the bound value of a `ScopedValue` can be read  via its `get()` method is a _dynamic scope_.
+This is commonly referred to as a _static_ (or _lexical_) scope. However, the scope in which the bound value of a `ScopedValue` can be read  via its `get()` method is a _dynamic scope_, defined thus by Wikipedia:
 
-> Dynamic scoping means that a variable can acquire a value on entry into a lexical scope, and when that lexical scope terminates, the previous value of that variable is restored.
-> In simpler terms, in dynamic scoping, the compiler first searches the current frame and then successively all the calling frames.
+> With _dynamic scope_, a name refers to execution context. In technical terms, this means that each name has a [thread local] stack of bindings. Introducing a local variable with name x pushes a binding onto the [thread-local] `x` stack (which may have been empty), which is popped off when the control flow leaves the scope. Evaluating `x` in any context always yields the top binding. Note that this [finding the topmost binding] cannot be done at compile time because the binding stack only exists at run time, which is why this type of scope is called dynamic scope. 
 
 This idea is also related to the term _extent_, to appear in the JVM Specification:
 
 > It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
 
-Accordingly, a scoped value that is written in `m1` (associated with the bottom most frame of the extent) can be read in `m2`, `m3`, and so on up to `mn` (associated with the top most frame of the extent).
+Accordingly, a scoped value that is written in `m1` (associated with the bottom most frame of the extent) can be read in `m2`, `m3`, and so on up to `mn` (associated with the top most frame of the extent). The _dynamic scope_ in which that scoped value can be read corresponds exactly with the _extent_ of `m1`.
 
 The [diagram shown earlier](#Web-framework-example-Initial-extents), of two threads executing code from different components, depicts two extents. In both extents, the bottom most frame belongs to the method `Server.serve(...)`. In the extent for Thread 1, the top most frame belongs to `DBAccess.newConnection(...)`, while for Thread 2 the top most frame belongs to the constructor of `InvalidPrincipalException`.
 
@@ -221,9 +220,9 @@ The web framework example dedicates a thread to handling each request, so the sa
 
 Data shared by a component running in the request-handling thread needs to be available to components running in child threads. Otherwise, when user code running in a child thread calls the data access component, that component — now also running in the child thread — will be unable to check the `Principal` shared by the server component running in the request-handling thread. To enable cross-thread sharing, scoped values can be inherited by child threads.
 
-The preferred mechanism for user code to create virtual threads is the Structured Concurrency API ([JEP 428](https://openjdk.java.net/jeps/428)), specifically the class [`StructuredTaskScope`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/StructuredTaskScope.html). scoped values in the parent thread are automatically inherited by child threads created with `StructuredTaskScope`. Code in a child thread can use bindings established for a scoped value in the parent thread with minimal overhead. Unlike with thread-local variables, there is no copying of a parent thread's extent-local bindings to the child thread.
+The preferred mechanism for user code to create virtual threads is the Structured Concurrency API ([JEP 428](https://openjdk.java.net/jeps/428)), specifically the class [`StructuredTaskScope`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/StructuredTaskScope.html). scoped values in the parent thread are automatically inherited by child threads created with `StructuredTaskScope`. Code in a child thread can use bindings established for a scoped value in the parent thread with minimal overhead. Unlike with thread-local variables, there is no copying of a parent thread's scoped value bindings to the child thread.
 
-Here is an example of extent-local inheritance occurring behind the scenes in user code, in a variant of the `Application.handle(...)` method called from `Server.serve(...)`. The user code calls `StructuredTaskScope.fork(...)` (1, 2) to run the `findUser()` and `fetchOrder()` methods concurrently, in their own virtual threads. Each method calls the data access component (3), which as before consults the scoped value `PRINCIPAL` (4). Further details of the user code are not discussed here; see [JEP 428](https://openjdk.java.net/jeps/428#Description) for information.
+Here is an example of scoped value inheritance occurring behind the scenes in user code, in a variant of the `Application.handle(...)` method called from `Server.serve(...)`. The user code calls `StructuredTaskScope.fork(...)` (1, 2) to run the `findUser()` and `fetchOrder()` methods concurrently, in their own virtual threads. Each method calls the data access component (3), which as before consults the scoped value `PRINCIPAL` (4). Further details of the user code are not discussed here; see [JEP 428](https://openjdk.java.net/jeps/428#Description) for information.
 
 ```
 class Application {
