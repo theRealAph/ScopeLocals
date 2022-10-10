@@ -112,8 +112,8 @@ A _scoped value_ allows data to be safely and efficiently shared between compone
 
 Like a thread-local variable, a scoped value has multiple incarnations, one per thread. The particular incarnation that is used depends on which thread calls its methods. Unlike a thread-local variable, a scoped value is written once and is then immutable, and is available only for a bounded period during execution of the thread.
 
-A scoped value is used as shown below. Some code calls `ScopedValue.where(...)` to _bind_ a value to the current thread's incarnation of the variable for the lifetime of the call to the `run(...)` method in that thread. The lambda expression passed to the `run(...)` method, and any method called directly or indirectly from that lambda expression, can read the scoped value via its `get()` method. After the `run(...)` method finishes, the binding is destroyed.
-
+A scoped value is used as shown below. Some code calls `ScopedValue.where(...)`, presenting a scoped value and the object to which it is to be bound. The call to `run` _binds_ the scoped value, providing an incarnation that is specific to the current thread, then executes the lambda expression passed as argument. During the lifetime of the `run(...)` call, the lambda, or any method called directly or indirectly from that lambda expression, can read the scoped value via its `get()` method. After the `run(...)` method finishes, the binding is destroyed.
+                     
 ```
 final static ScopedValue<...> V = new ScopedValue<>();
 
@@ -125,11 +125,15 @@ ScopedValue.where(V, <value>)
 ... V.get() ...
 ```
 
-The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is usually as fast as reading a local variable, regardless of the stack distance between caller and callee.
+The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
+                
+[ _Remark:_ This is all very laudable and correct but it is too complicated. Not sure yet how to slim it down.]
 
 ### The meaning of "scoped"
 
-The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, it is different in that it is dynamically (rather than statcally) scoped.
+[_Remark_: this explanation is rather complex. Do we need something less detailed? Do we need to describe the concept of an _extent_ at all? ]
+
+The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, it is different in that it is dynamically (rather than statically) scoped.
 
 The term _scope_ is defined thus in the _Java Language Specification_: 
 
@@ -173,9 +177,11 @@ class DBAccess {
 }
 ```
 
-Together, `where(...)` and `run(...)` provide the one-way sharing of data from the server component to the data access component. The `where(...)` call binds the scoped value for the lifetime of the `run(...)` call, so `PRINCIPAL.get()` in any method called from `run(...)` will read the value bound by `where(...)`. Accordingly, when `Server.serve(...)` calls user code, and user code calls `DBAccess.open()`, the value read from the scoped value (3) is the value written by `Server.serve(...)` earlier in the thread.
+Together, `where(...)` and `run(...)` provide the one-way sharing of data from the server component to the data access component. The scoped value passed to `where(...)` is bound to the corresponding object for the lifetime of the `run(...)` call, so `PRINCIPAL.get()` in any method called from `run(...)` will read that value. Accordingly, when `Server.serve(...)` calls user code, and user code calls `DBAccess.open()`, the value read from the scoped value (3) is the value written by `Server.serve(...)` earlier in the thread.
 
-The binding established by `where(...)` is usable only in code called from `run(...)`. If `PRINCIPAL.get()` appeared in `Server.serve(...)` after the call to `run(...)`, an exception would be thrown because `PRINCIPAL` is no longer bound in the thread.
+The binding established by `run(...)` is usable only in code called from `run(...)`. If `PRINCIPAL.get()` appeared in
+`Server.serve(...)` after the call to `run(...)`, an exception would be thrown because `PRINCIPAL` is no longer bound in
+the thread.
 
 ###  Rebinding scoped values
 
@@ -195,7 +201,7 @@ As an example, consider a third component of the web framework: a logging compon
 1. Server.serve(..) ---------------------------------------+
 ```
 
-Here is the code for `log(...)` with rebinding. It obtains a guest `Principal` (1) and rebinds the scoped value `PRINCIPAL` to the guest value (2). For the lifetime of the invocation of `call` (3), `PRINCIPAL.get()` will read this new value. Thus, if the user code passes a malicious lambda expression to `log(...)` that performs `DBAccess.open()`, the check in `DBAccess.open()` will read the guest `Principal` from `PRINCIPAL` and throw an `InvalidPrincipalException`.
+Here is the code for `log(...)` with rebinding. It obtains a guest `Principal` (1), passing it as the new binding for the scoped value `PRINCIPAL` (2). For the lifetime of the invocation of `call` (3), `PRINCIPAL.get()` will read this new value. Thus, if the user code passes a malicious lambda expression to `log(...)` that performs  `DBAccess.open()`, the check in `DBAccess.open()` will read the guest `Principal` from `PRINCIPAL` and throw an `InvalidPrincipalException`.
 
 ```
 class Logger {
@@ -210,9 +216,9 @@ class Logger {
 }
 ```
 
-(We here use `call(...)` instead of `run(...)` to invoke the formatter because the result of the lambda expression is needed.)
+[_Remark_: These paragraphs also need to be more careful about where the binding happens.]
 
-The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the nested extent. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `call(...)` method. This guarantees a bounded lifetime for sharing of the new value.
+The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the dynamic scope of `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `call(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
 ###  Inheriting scoped values
 
@@ -265,7 +271,7 @@ Thread 1                           Thread 2
 1. Server.serve(..) ---------------------------------------------+
 ```
 
-The fork/join model offered by `StructuredTaskScope` means that the value bound by `ScopedValue.where(...)` has a determinate lifetime. The `Principal` is available while the child thread is running, and `scope.join()` ensures that child threads terminate and thus no longer use it. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
+The fork/join model offered by `StructuredTaskScope` means that the value bound by `ScopedValue.where(...).run(...)` has a determinate lifetime. The `Principal` is available while the child thread is running, and `scope.join()` ensures that child threads terminate and thus no longer use it. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
 
 ### Migrating to scoped values
 
