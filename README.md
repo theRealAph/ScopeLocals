@@ -275,7 +275,7 @@ The fork/join model offered by `StructuredTaskScope` means that the value bound 
 
 ### Migrating to scoped values
 
-scoped values are likely to be useful and preferable in many scenarios where thread-local variables are used today. Beyond serving as hidden method arguments, scoped values may assist with:
+Scoped values are likely to be useful and preferable in many scenarios where thread-local variables are used today. Beyond serving as hidden method arguments, scoped values may assist with:
 
 - *Re-entrant code* — Sometimes it is desirable to detect recursion, perhaps because a framework is not re-entrant or because recursion must be limited in some way. a scoped value provides a way to do this: Set it up as usual, with `ScopedValue.where(...)` and `run(...)`, and then deep in the call stack, call `ScopedValue.isBound()` to check if it has a binding for the current thread. More elaborately, the scoped value can model a recursion counter by being repeatedly rebound.
 
