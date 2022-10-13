@@ -125,25 +125,25 @@ ScopedValue.where(V, <value>)
 ... V.get() ...
 ```
 
-The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
+The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no+`set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
                 
 [ _Remark:_ This is all very laudable and correct but it is too complicated. Not sure yet how to slim it down.]
 
 ### The meaning of "scoped"
 
 The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, in this case the term
-is being used with a slightly different sense to the standard meaning defined in the _Java Language Specification_, which is:
+is being used with a slightly different sense from the standard meaning defined in the _Java Language Specification_, which is:
 
 > The scope of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed.
 
-From this, the scope of a declaration is a static property of the program code. It is often referred to as a _lexical_ scope.
-In contrast, the scope of a _scoped value_ refers to a property of the program as it executes, and is normally
+From this, the scope of a declaration is a static property of the program code. It is often referred to as a _lexical_ (or _static_) scope.
+In contrast, the scope of a _scoped value_ refers to a property of the program as it executes, and is often
 referred to as a _dynamic_ scope. Defining the term _dynamic scope_ requires us to explain the related
 idea of an _extent_, to appear in the JVM Specification:
 
 > It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
 
-If m1 is a `call()` or `run()` method that binds scoped value `s`, then the dynamic scope of `s` includes all the frames
+If m1 is a `call()` or `run()` method that binds scoped value `s`, then the dynamic scope of `s` is all the frames
 m1, m2, ... mn in every extent that arises while the call to m1 is executing. A call to `s.get()` can only retrieve
 the binding established by m1 when it occurs in one of the frames m2, ..., mn.
 
@@ -217,7 +217,7 @@ class Logger {
 
 [_Remark_: These paragraphs also need to be more careful about where the binding happens.]
 
-The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the dynamic scope of `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `call(...)` method. This guarantees a bounded lifetime for sharing of the new value.
+The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the dynamic scope of `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `formatter.get(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
 ###  Inheriting scoped values
 
