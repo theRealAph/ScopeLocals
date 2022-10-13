@@ -127,8 +127,6 @@ ScopedValue.where(V, <value>)
 
 The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
                 
-[ _Remark:_ This is all very laudable and correct but it is too complicated. Not sure yet how to slim it down.]
-
 ### The meaning of "scoped"
 
 The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, in this case the term
@@ -215,8 +213,6 @@ class Logger {
 }
 ```
 
-[_Remark_: These paragraphs also need to be more careful about where the binding happens.]
-
 The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the dynamic scope of `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `formatter.get(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
 ###  Inheriting scoped values
@@ -225,7 +221,7 @@ The web framework example dedicates a thread to handling each request, so the sa
 
 Data shared by a component running in the request-handling thread needs to be available to components running in child threads. Otherwise, when user code running in a child thread calls the data access component, that component — now also running in the child thread — will be unable to check the `Principal` shared by the server component running in the request-handling thread. To enable cross-thread sharing, scoped values can be inherited by child threads.
 
-The preferred mechanism for user code to create virtual threads is the Structured Concurrency API ([JEP 428](https://openjdk.java.net/jeps/428)), specifically the class [`StructuredTaskScope`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/StructuredTaskScope.html). scoped values in the parent thread are automatically inherited by child threads created with `StructuredTaskScope`. Code in a child thread can use bindings established for a scoped value in the parent thread with minimal overhead. Unlike with thread-local variables, there is no copying of a parent thread's scoped value bindings to the child thread.
+The preferred mechanism for user code to create virtual threads is the Structured Concurrency API ([JEP 428](https://openjdk.java.net/jeps/428)), specifically the class [`StructuredTaskScope`](https://download.java.net/java/early_access/loom/docs/api/jdk.incubator.concurrent/jdk/incubator/concurrent/StructuredTaskScope.html). Scoped values in the parent thread are automatically inherited by child threads created with `StructuredTaskScope`. Code in a child thread can use bindings established for a scoped value in the parent thread with minimal overhead. Unlike with thread-local variables, there is no copying of a parent thread's scoped value bindings to the child thread.
 
 Here is an example of scoped value inheritance occurring behind the scenes in user code, in a variant of the `Application.handle(...)` method called from `Server.serve(...)`. The user code calls `StructuredTaskScope.fork(...)` (1, 2) to run the `findUser()` and `fetchOrder()` methods concurrently, in their own virtual threads. Each method calls the data access component (3), which as before consults the scoped value `PRINCIPAL` (4). Further details of the user code are not discussed here; see [JEP 428](https://openjdk.java.net/jeps/428#Description) for information.
 
