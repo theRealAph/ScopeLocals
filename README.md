@@ -131,43 +131,21 @@ The syntactic structure of the code delineates the period of time when a thread 
 
 ### The meaning of "scoped"
 
-[_Remark_: this explanation is rather complex. Do we need something less detailed? Do we need to describe the concept of an _extent_ at all? ]
-
-The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, it is different in that it is dynamically (rather than statically) scoped.
-
-The term _scope_ is defined thus in the _Java Language Specification_: 
+The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, in this case the term
+is being used with a slightly different sense to the standard meaning defined in the _Java Language Specification_, which is:
 
 > The scope of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed.
 
-This is commonly referred to as a _static_ (or _lexical_) scope. However, the scope in which the bound value of a `ScopedValue` can be read  via its `get()` method is a _dynamic scope_, defined thus by Wikipedia:
-
-> With _dynamic scope_, a name refers to execution context. In technical terms, this means that each name has a [thread local] stack of bindings. Introducing a local variable with name x pushes a binding onto the [thread-local] `x` stack (which may have been empty), which is popped off when the control flow leaves the scope. Evaluating `x` in any context always yields the top binding. Note that this [finding the topmost binding] cannot be done at compile time because the binding stack only exists at run time, which is why this type of scope is called dynamic scope. 
-
-This idea is also related to the term _extent_, to appear in the JVM Specification:
-
-> It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
-
-Accordingly, a scoped value that is written in `m1` (associated with the bottom most frame of the extent) can be read in `m2`, `m3`, and so on up to `mn` (associated with the top most frame of the extent). The _dynamic scope_ in which that scoped value can be read corresponds exactly with the _extent_ of `m1`.
-
-The [diagram shown earlier](#Web-framework-example-Initial-extents), of two threads executing code from different components, depicts two extents. In both extents, the bottom most frame belongs to the method `Server.serve(...)`. In the extent for Thread 1, the top most frame belongs to `DBAccess.newConnection(...)`, while for Thread 2 the top most frame belongs to the constructor of `InvalidPrincipalException`.
-    
-[_Remark_: Possible alternative to the above]
-
-The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, in his case it
-is being used with a slightly different sense to the standard meaning defined in the _Java Language Specification_:
-
-> The scope of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed.
-
-The scope of a declaration is a static property of the program code. It is often referred to as a _lexical_ scope.
-By contrast the scope of a scoped value refers to a property of the program as it is executing, and is normally
-referred to as a _dynamic_ scope. Definition of the term _dynamic scope_ requires explanation of the related
+From this, the scope of a declaration is a static property of the program code. It is often referred to as a _lexical_ scope.
+In contrast, the scope of a _scoped value_ refers to a property of the program as it executes, and is normally
+referred to as a _dynamic_ scope. Defining the term _dynamic scope_ requires us to explain the related
 idea of an _extent_, to appear in the JVM Specification:
 
 > It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
 
-If m1 is a `call` or `run` method that binds scoped value `s` then the dynamic scope of `s` includes all the frames
+If m1 is a `call()` or `run()` method that binds scoped value `s`, then the dynamic scope of `s` includes all the frames
 m1, m2, ... mn in every extent that arises while the call to m1 is executing. A call to `s.get()` can only retrieve
-the binding established by m1 when it occurs in one of these frames m2, ..., mn.
+the binding established by m1 when it occurs in one of the frames m2, ..., mn.
 
 The [diagram shown earlier](#Web-framework-example-Initial-extents), of two threads executing code from different components, depicts two extents. In both extents, the bottom most frame belongs to the method `Server.serve(...)`. In the extent for Thread 1, the top most frame belongs to `DBAccess.newConnection(...)`, while for Thread 2 the top most frame belongs to the constructor of `InvalidPrincipalException`.
 
