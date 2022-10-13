@@ -125,7 +125,7 @@ ScopedValue.where(V, <value>)
 ... V.get() ...
 ```
 
-The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no+`set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
+The syntactic structure of the code delineates the period of time when a thread can read its incarnation of a scoped value. This bounded lifetime, combined with immutability, greatly simplifies reasoning about thread behavior. The one-way transmission of data from caller to callees — both direct and indirect — is obvious at a glance. There is no `set(...)` method that lets faraway code change the scoped value at any time. Immutability also helps performance: Reading a scoped value with `get()` is often as fast as reading a local variable, regardless of the stack distance between caller and callee.
                 
 [ _Remark:_ This is all very laudable and correct but it is too complicated. Not sure yet how to slim it down.]
 
@@ -143,7 +143,7 @@ idea of an _extent_, to appear in the JVM Specification:
 
 > It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
 
-If m1 is a `call()` or `run()` method that binds scoped value `s`, then the dynamic scope of `s` is all the frames
+If m1 is a `call()` or `run()` method that binds the scoped value `s`, then the dynamic scope of `s` is all the frames
 m1, m2, ... mn in every extent that arises while the call to m1 is executing. A call to `s.get()` can only retrieve
 the binding established by m1 when it occurs in one of the frames m2, ..., mn.
 
