@@ -147,13 +147,6 @@ The unfolding execution of those methods defines a dynamic scope; the
 incarnation is in scope during the execution of those methods, and 
 nowhere else.
 
-If m1 is a `call()` or `run()` method that binds the scoped value `s`, then the dynamic scope of `s` is all the frames
-m1, m2, ... mn in every extent that arises while the call to m1 is executing. A call to `s.get()` can only retrieve
-the binding established by m1 when it occurs in one of the frames m2, ..., mn.
-
-The [diagram shown earlier](#Web-framework-example-Initial-extents), of two threads executing code from different components, depicts two extents. In both extents, the bottom most frame belongs to the method `Server.serve(...)`. In the extent for Thread 1, the top most frame belongs to `DBAccess.newConnection(...)`, while for Thread 2 the top most frame belongs to the constructor of `InvalidPrincipalException`.
-
-
 ###  Web framework example with scoped values
 
 The framework code shown earlier can easily be rewritten to use a scoped value instead of a thread-local variable. At (1), the server component declares a scoped value instead of a thread-local variable. At (2), the server component calls `ScopedValue.where(...)` and `run(...)` instead of a thread-local variable's `set(...)` method.
@@ -218,8 +211,13 @@ class Logger {
     }
 }
 ```
+[_Remark_: I qualified 'dynamic scope' with 'nested' here in order to make
+it clear that the new dynamic scope lies within the original one, overriding
+it. We could possibly throw in the word 'shadow' instead. Alex has already
+brought it in via his quote from the langauge spec. WDYT?
+(n.b. this is the minimal option :-)]
 
-The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the dynamic scope of `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `formatter.get(...)` method. This guarantees a bounded lifetime for sharing of the new value.
+The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the nested dynamic scope introduced by `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `formatter.get(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
 ###  Inheriting scoped values
 
@@ -256,7 +254,17 @@ class DBAccess {
 }
 ```
 
+[_Remark_: The following two paragraphs needs to be reworded to be about scope,
+not extent.]
+
 `StructuredTaskScope.fork(...)` ensures that the binding of the scoped value `PRINCIPAL` made in the request-handling thread — [when `Server.serve(...)` called `ScopedValue.where(...)`](#Web-framework-example-ScopedValue-code) — is automatically visible to `PRINCIPAL.get()` in the child thread. The following diagram shows the cross-thread extent of the scoped value:
+
+[_Remark_: Suggested alternative]
+
+`StructuredTaskScope.fork(...)` ensures that the binding of the scoped value `PRINCIPAL` made in the request-handling
+thread — [when `Server.serve(...)` called `ScopedValue.where(...)`](#Web-framework-example-ScopedValue-code) — is
+automatically visible to `PRINCIPAL.get()` in the child thread. The following diagram shows how the dynamic scope
+of the binding is extended to include all methods executed in the child thread:
 
 <a name="Web-framework-example-Inheritance-extent"></a>
 ```
@@ -273,6 +281,13 @@ Thread 1                           Thread 2
 ```
 
 The fork/join model offered by `StructuredTaskScope` means that the value bound by `ScopedValue.where(...).run(...)` has a determinate lifetime. The `Principal` is available while the child thread is running, and `scope.join()` ensures that child threads terminate and thus no longer use it. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
+                                                                               
+[_Remark_: Suggested alternative]
+
+The fork/join model offered by `StructuredTaskScope` means that the dynamic scope of the binding is still bounded
+by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Principal` will remain in scope while the child
+thread is running, and `scope.join()` ensures that child threads terminate before `run(...)` can return, rendering
+the binding inaccessible. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
 
 ### Migrating to scoped values
 
