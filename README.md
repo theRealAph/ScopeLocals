@@ -211,12 +211,6 @@ class Logger {
     }
 }
 ```
-[_Remark_: I qualified 'dynamic scope' with 'nested' here in order to make
-it clear that the new dynamic scope lies within the original one, overriding
-it. We could possibly throw in the word 'shadow' instead. Alex has already
-brought it in via his quote from the langauge spec. WDYT?
-(n.b. this is the minimal option :-)]
-
 The syntactic structure of `where(...)` and `call(...)` means that rebinding is only visible in the nested dynamic scope introduced by `call`. The body of `log(...)` cannot change the binding seen by that method itself but can change the binding seen by its callees, such as the `formatter.get(...)` method. This guarantees a bounded lifetime for sharing of the new value.
 
 ###  Inheriting scoped values
@@ -254,17 +248,10 @@ class DBAccess {
 }
 ```
 
-[_Remark_: The following two paragraphs needs to be reworded to be about scope,
-not extent.]
-
-`StructuredTaskScope.fork(...)` ensures that the binding of the scoped value `PRINCIPAL` made in the request-handling thread — [when `Server.serve(...)` called `ScopedValue.where(...)`](#Web-framework-example-ScopedValue-code) — is automatically visible to `PRINCIPAL.get()` in the child thread. The following diagram shows the cross-thread extent of the scoped value:
-
-[_Remark_: Suggested alternative]
-
 `StructuredTaskScope.fork(...)` ensures that the binding of the scoped value `PRINCIPAL` made in the request-handling
 thread — [when `Server.serve(...)` called `ScopedValue.where(...)`](#Web-framework-example-ScopedValue-code) — is
 automatically visible to `PRINCIPAL.get()` in the child thread. The following diagram shows how the dynamic scope
-of the binding is extended to include all methods executed in the child thread:
+of the binding is extended to all methods executed in the child thread:
 
 <a name="Web-framework-example-Inheritance-extent"></a>
 ```
@@ -279,10 +266,6 @@ Thread 1                           Thread 2
 2. Application.handle(..)                                        |
 1. Server.serve(..) ---------------------------------------------+
 ```
-
-The fork/join model offered by `StructuredTaskScope` means that the value bound by `ScopedValue.where(...).run(...)` has a determinate lifetime. The `Principal` is available while the child thread is running, and `scope.join()` ensures that child threads terminate and thus no longer use it. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
-                                                                               
-[_Remark_: Suggested alternative]
 
 The fork/join model offered by `StructuredTaskScope` means that the dynamic scope of the binding is still bounded
 by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Principal` will remain in scope while the child
