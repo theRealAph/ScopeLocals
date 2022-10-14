@@ -129,17 +129,23 @@ The syntactic structure of the code delineates the period of time when a thread 
                 
 ### The meaning of "scoped"
 
-The term _scoped value_ draws on the concept of a _scope_ in the Java Programming Language. However, in this case the term
-is being used with a slightly different sense from the standard meaning defined in the _Java Language Specification_, which is:
+The _scope_ of a thing is the space in which it lives -- the extent or 
+range in which it can be used. In the Java programming language, the 
+_scope_ of a variable declaration is the space within the program text 
+where it is legal to refer to the variable with a simple name (JLS 6.3). 
+This kind of scope is more accurately called _lexical scope_ or _static 
+scope_, since the space where the variable is "in scope" can be 
+understood statically by looking for { and } characters in the program text.
 
-> The scope of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed.
-
-From this, the scope of a declaration is a static property of the program code. It is often referred to as a _lexical_ (or _static_) scope.
-In contrast, the scope of a _scoped value_ refers to a property of the program as it executes, and is often
-referred to as a _dynamic_ scope. Defining the term _dynamic scope_ requires us to explain the related
-idea of an _extent_, to appear in the JVM Specification:
-
-> It is often useful to describe the situation where, in a given thread, a given method m1 invokes a method m2, which invokes a method m3, and so on until the method invocation chain includes the current method mn. None of m1..mn have yet completed; all of their frames are still stored on the Java Virtual Machine stack. Collectively, their frames are called an _extent_. The frame for the current method mn is called the _top most frame_ of the extent. The frame for the given method m1 is called the _bottom most frame_ of the extent.
+Another kind of scope is called _dynamic scope_. The dynamic scope of a 
+thing refers to the parts of a program that can use the thing as the 
+program executes. This is the concept to which _scoped value_ appeals, 
+because binding a scoped value V in a `run` method produces an 
+incarnation of V that is usable by certain parts of the program as it 
+executes, namely the methods invoked directly or indirectly by `run`. 
+The unfolding execution of those methods defines a dynamic scope; the 
+incarnation is in scope during the execution of those methods, and 
+nowhere else.
 
 If m1 is a `call()` or `run()` method that binds the scoped value `s`, then the dynamic scope of `s` is all the frames
 m1, m2, ... mn in every extent that arises while the call to m1 is executing. A call to `s.get()` can only retrieve
