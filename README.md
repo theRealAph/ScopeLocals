@@ -269,8 +269,8 @@ Thread 1                           Thread 2
 
 The fork/join model offered by `StructuredTaskScope` means that the dynamic scope of the binding is still bounded
 by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Principal` will remain in scope while the child
-thread is running, and `scope.join()` ensures that child threads terminate before `run(...)` can return, rendering
-the binding inaccessible. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
+thread is running, and `scope.join()` ensures that child threads terminate before `run(...)` can return, destroying
+the binding. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
 
 ### Migrating to scoped values
 
