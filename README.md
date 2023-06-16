@@ -31,19 +31,19 @@ Goals
 
 ## Motivation
 
-The functionality of any Java application or library is organized as a call graph of methods. Simple methods may only refer to constant data or, in the case of instance methods, local instance state. However, most methods are parameterised, allowing callers to share data with the methods they call via one or more call arguments. Arguments are always bound locally to a specific call and hence their values share data within the context of a specific thread executing the given call graph.
+The functionality of any Java application or library is organized as a call graph of methods. Simple methods may only refer to constant data or, in the case of instance methods, local instance state. However, most methods are parameterised, allowing callers to share data with the methods they call via one or more call arguments. Arguments are always bound locally to a specific call and hence their values share data within the context of a specific thread executing some part of the call graph.
 
-Most of the time method parameters are an effective and convenient way to share data. However, parameter passing does not always scale well in large applications built using independently developed and maintained components. For example, a web framework might include a server component, implemented in the [thread-per-request style](https://openjdk.org/jeps/444#The-thread-per-request-style), application-specific logic and a data access component, which handles persistence.
+Most of the time method arguments are an effective and convenient way to share data. However, parameterization does not always scale well in large applications built using independently developed and maintained components. For example, a web framework might include a server component, implemented in the [thread-per-request style](https://openjdk.org/jeps/444#The-thread-per-request-style), application-specific logic and a data access component, which handles persistence.
 
-The server may associate each incoming request with an identity which needs to be shared with the data access component to regulate access to resources. However, it is normally the responsibility of the application request handler rather than the server to decide whether to invoke a data access operation, such as, for example, opening a database connection. In order to share the identity using method parameters the framework must pass it as an argument to the application request handler call. The application code is then responsible for passing this argument on down through the application call chain to any point where it might call the relevant data access component method.
+The server may associate each incoming request with an identity which needs to be shared with the data access component to regulate access to resources. However, it is normally the responsibility of the application request handler rather than the server to decide whether to invoke a data access operation, such as, for example, opening a database connection. In order to share the identity using method arguments the framework must pass it to the application request handler call. The application code is then responsible for passing this argument on down through the application call chain to any point where it might call the relevant data access component method.
 
-There are several reasons why this can become a problem. The obvious issue is that application logic is now complicated by the need to receive and correctly pass on framework data that it does not itself directly consume. When the call hierarchy and control flow in the server thread is large and complex this may require correctly routing parameter flow through many call chains. If instead the server thread tries to bypass the routing problem by storing the parameter as object state then it must ensure that this state is only ever read by the correct thread and that it does not get overwritten or go stale before it is passed on the data access component. Either way, the resulting code is now more brittle than it needs to be: if the framework and data access component need to change the way they share data or the type and number of data values they share then the server thread may also need to be updated.
+There are several reasons why this can become a problem. The obvious issue is that application logic is now complicated by the need to receive and correctly pass on framework data that it does not itself directly consume. When the call hierarchy and control flow in the server thread is large and complex this may require correctly routing arguments through many call chains. If instead the server thread tries to bypass the routing problem by storing the argument as object state then it must ensure that this state is only ever read by the correct thread and that it does not get overwritten or go stale before it is passed on the data access component. Either way, the resulting code is now more brittle than it needs to be: if the framework and data access component need to change the way they share data or the type and number of data values they share then the server thread may also need to be updated.
 
-The diagram below depicts this problem scenario. The framework handles two requests, each in its own thread. Request handling flows upward, from the server component (`Server.serve(...)`) to user code (`Application.handle(...)`) to the data access component (`DBAccess.open()`). The data access component uses the `Identity` created by the seerver component to decide whether the thread is permitted to access the database:
+The diagram below depicts this problem scenario. The framework handles two requests, each in its own thread. Request handling flows upward, from the server component (`Server.serve(...)`) to user code (`Application.handle(...)`) to the data access component (`DBAccess.open()`). The data access component needs to share the `Identity` created by the server component in order to decide whether the thread is permitted to access the database:
 
-- In Thread 1, the `CUSTOMER` identity created by the server component allows database access. The dashed line indicates the identity is to be shared with the data access component, which inspects it and proceeds to call `DBAccess.newConnection()`.
+- In Thread 1, a `CUSTOMER` identity created by the server component allows database access. The dashed line indicates the identity is to be shared with the data access component, which inspects it and proceeds to call `DBAccess.newConnection()`.
 
-- In Thread 2, the `GUEST` identity created by the server component does not allow database access. The data access component inspects the identity, determines that the user code must not proceed, and throws an `InvalidIdentityException`.
+- In Thread 2, a `GUEST` identity created by the server component does not allow database access. The data access component inspects the identity, determines that the user code must not proceed, and throws an `InvalidIdentityException`.
 
 <a name="Web-framework-example-Initial-extents"></a>
 ```
@@ -58,7 +58,7 @@ Thread 1                                 Thread 2
 1. Server.serve(..) ----------+          1. Server.serve(..) ----------+
 ```
 
-The correct Identity for each thread can be shared by `Server.serve` and `DBAccess.open` by passing it as an argument through the chain of calls to the `Application` methods. However, it would be cleaner, less prone to error and easier to maintain if there were some way for the two components to _directly_ share the value belonging to the current thread without involving the application-specific code.
+The correct `Identity` for each thread can be communicated from `Server.serve` to `DBAccess.open` by passing it as an argument through the chain of `Application` method calls. However, it would be cleaner, less prone to error and easier to maintain if there were some way for the two components to _directly_ share the value belonging to the current thread without involving the `Applicaton` code.
 
 ### Thread-local variables for sharing
 
@@ -70,11 +70,10 @@ thread-local variable to share an `Identity`. The server component
 first declares a thread-local variable, `IDENTITY` (1). When
 `Server.serve(...)` is executed in a request-handling thread, it
 writes a suitable `Identity` to the thread-local variable (2), then
-calls user code. If and when user code calls `DBAccess.open()`, the
+calls the `Application` handler. If and when user code calls `DBAccess.open()`, the
 data access component reads the thread-local variable (3) to obtain
-the `Identity` of the request-handling thread. Only if the
-`Identity` indicates suitable permissions is database access
-permitted (4).
+the `Identity` of the request-handling thread. The database access only
+proceeds if the `Identity` is acceptable (4).
 
 <a name="Web-framework-example-ThreadLocal-code"></a>
 ```
@@ -100,7 +99,7 @@ class DBAccess {
 
 Using a thread-local variable avoids the need to pass an `Identity` as a method argument when the server component calls user code, and when user code calls the data access component. The thread-local variable serves as a kind of hidden method argument: A thread which calls `IDENTITY.set(...)` in `Server.serve(...)` and then `IDENTITY.get()` in `DBAccess.open()` will automatically see its own incarnation of the `IDENTITY` variable. In effect, the `ThreadLocal` field serves as a key that is used to look up a `Identity` value for the current thread.
 
-In this example, the `IDENTITY` field has package access. This allows both framework components, declared in the same package, to access its value. The `IDENTITY` field is not accessible to user code.
+In this example, the `IDENTITY` field has package access. This allows both framework components, declared in the same package, to access its value. The `IDENTITY` field is not accessible to `Application` classes.
 
 ### Problems with thread-local variables
 
@@ -188,7 +187,7 @@ class DBAccess {
 }
 ```
 
-Together, `where(...)` and `run(...)` provide one-way sharing of data from the server component to the data access component. The scoped value passed to `where(...)` is bound to the corresponding object for the lifetime of the `run(...)` call, so `IDENTITY.get()` in any method called from `run(...)` will read that value. Accordingly, when `Server.serve(...)` calls user code, and user code calls `DBAccess.open()`, the value read from the scoped value (3) is the value written by `Server.serve(...)` earlier in the thread.
+Together, `where(...)` and `run(...)` provide one-way sharing of data from the server component to the data access component. The scoped value passed to `where(...)` is bound to the corresponding object for the lifetime of the `run(...)` call, so `IDENTITY.get()` in any method called from `run(...)` will read that value. Accordingly, when `Server.serve(...)` calls `Application` code, and that `Application` code calls `DBAccess.open()`, the value read from the scoped value (3) is the value written by `Server.serve(...)` earlier in the thread.
 
 The binding established by `run(...)` is usable only in code called from `run(...)`. If `IDENTITY.get()` appeared in
 `Server.serve(...)` after the call to `run(...)`, an exception would be thrown because `IDENTITY` is no longer bound in
@@ -200,7 +199,7 @@ As before, the framework relies on the language's access control to restrict acc
 
 The immutability of scoped values means that a caller can use a scoped value to reliably communicate a constant value to its callees in the same thread. However, there are occasions when one of the callees might need to use the same scoped value to communicate a different value to its own callees in the thread. The `ScopedValue` API allows a new binding to be established for nested calls.
 
-As an example, consider a third component of the web framework: a logging component with a method `void log(Supplier<String> formatter)`. User code passes a lambda expression to the `log(...)` method; if logging is enabled, the method calls `formatter.get()` to evaluate the lambda expression and then prints the result. Although the user code may have permission to access the database, the lambda expression should not, since it only needs to format text. Accordingly, the scoped value that was initially bound in `Server.serve(...)` should be rebound to a guest `Identity` for the lifetime of `formatter.get()`:
+As an example, consider a third component of the web framework: a logging component with a method `void log(Supplier<String> formatter)`. `Application` code passes a lambda expression to the `log(...)` method; if logging is enabled, the method calls `formatter.get()` to evaluate the lambda expression and then prints the result. Although the `Application` handler code may have permission to access the database, the lambda expression should not, since it only needs to format text. Accordingly, the scoped value that was initially bound in `Server.serve(...)` should be rebound to a guest `Identity` for the lifetime of `formatter.get()`:
 
 <a name="Web-framework-example-Rebinding-extent"></a>
 ```
@@ -214,7 +213,7 @@ As an example, consider a third component of the web framework: a logging compon
 1. Server.serve(..) ---------------------------------------+
 ```
 
-Here is the code for `log(...)` with rebinding. It obtains a guest `Identity` (1) and passes it as the new binding for the scoped value `IDENTITY` (2). For the lifetime of the invocation of `call` (3), `IDENTITY.get()` will read this new value. Thus, if the user code passes a malicious lambda expression to `log(...)` that performs  `DBAccess.open()`, the check in `DBAccess.open()` will read the guest `Identity` from `IDENTITY` and throw an `InvalidIdentityException`.
+Here is the code for `log(...)` with rebinding. It obtains a guest `Identity` (1) and passes it as the new binding for the scoped value `IDENTITY` (2). For the lifetime of the invocation of `call` (3), `IDENTITY.get()` will read this new value. Thus, if the `Application` code passes an inapporpriate lambda expression to `log(...)` that tries to invoke  `DBAccess.open()`, the check in `DBAccess.open()` will read the guest `Identity` from `IDENTITY` and throw an `InvalidIdentityException`.
 
 ```
 class Logger {
