@@ -234,6 +234,8 @@ class Logger {
 
 A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
 
+#### I think we can use the running example as a better way to explain this idea of capability
+
 For example, suppose a framework allows running certain operations only in contexts where a user name is defined. This could be enforced as follows:
 
 ```
