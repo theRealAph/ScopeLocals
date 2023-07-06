@@ -53,7 +53,7 @@ Thread 1                                 Thread 2
 7. DBAccess.open() <----------+          7. DBAccess.open() <----------+
    ...                        |             ...                        |
 5. Application.fetchOrder()   |          5. Application.fetchOrder()   |
-   ...                  entity(CUSTOMER)    ...                  Identity(GUEST)
+   ...                Identity(CUSTOMER)    ...                  Identity(GUEST)
 2. Application.handle(..)     |          2. Application.handle(..)     |
 1. Server.serve(..) ----------+          1. Server.serve(..) ----------+
 ```
