@@ -31,7 +31,7 @@ Goals
 
 ## Motivation
 
-The functionality of any Java application or library is organized as a method call graph. Simple methods may only refer to constants or instance fields. However, most methods are parameterised, allowing callers to share data with the methods they call as call arguments. Arguments are always bound locally to a specific call and hence share data within the context of a specific thread.
+The functionality of any Java application or library is organized as a method call graph. Simple methods may only refer to constants or instance fields. However, most methods are parameterized, allowing a caller to share data with a called method by passing them as call arguments. Called methods may choose to pass this shared data on down the call chain. Arguments are always bound locally to a specific call and hence only share data within the context of a specific thread.
 
 Most of the time method arguments are an effective and convenient way to share data. However, parameterization does not always scale well in large applications built using independently developed and maintained components. For example, a web framework might include a server component, implemented in the [thread-per-request style](https://openjdk.org/jeps/444#The-thread-per-request-style), and  a data access component, which handles persistence, connected via application-specific code.
 
