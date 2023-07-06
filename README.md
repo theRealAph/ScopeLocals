@@ -234,7 +234,9 @@ class Logger {
 
 A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
 
-#### I think we can use the running example as a better way to explain this idea of capability
+#### I think we should use the running example as a better way to explain this idea of capability
+
+Why? The example below uses a check for the ScopedValue being bound as a way to decide if somethign has a capability. The running example uses an object bound to the scoped value to determine whether the thread has a capability. I don't believe the former use is realistic because it only allows yes/no answers. Any realistic capability model will likely require a capability object to give fine-grained responses to multiple capability requests (e.g. `Identity.cannOpen()` in the running example). So, the realistic use of scoped values will be as a way to deliver the capability objectt securely from caller to nested callee, not actually to implement the capability check.
 
 For example, suppose a framework allows running certain operations only in contexts where a user name is defined. This could be enforced as follows:
 
