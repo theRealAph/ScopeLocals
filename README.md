@@ -234,9 +234,9 @@ class Logger {
 
 A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
 
-#### I think we should use the running example as a better way to explain this idea of capability
+#### I think the running example provides a better way to explain use of Scopedvalue as a capability
 
-Why? The example below uses a check for the ScopedValue being bound as a way to decide if somethign has a capability. The running example uses an object bound to the scoped value to determine whether the thread has a capability. I don't believe the former use is realistic because it only allows yes/no answers. Any realistic capability model will likely require a capability object to give fine-grained responses to multiple capability requests (e.g. `Identity.cannOpen()` in the running example). So, the realistic use of scoped values will be as a way to deliver the capability objectt securely from caller to nested callee, not actually to implement the capability check.
+Why? The example below uses a check for the ScopedValue being bound as a way to decide if something has a capability. By contrast, the running example uses an object bound to the scoped value to determine whether the thread has a capability. I don't believe the former use is realistic because it only allows yes/no answers to a single permission. Any realistic capability model will likely require a capability object to give responses to multiple capability requests (e.g. `Identity.cannOpen()` in the running example) and also allow for enumerated ranges capabilities (e.g {beginner, intermediate, pro}). So, the realistic use of scoped values to sipport capabilities will be as a way to deliver the capability objectt securely from caller to nested callee, not actually to implement the capability check. Suggesting the example below is the way to go looks to me like promoting an anti-pattern.
 
 For example, suppose a framework allows running certain operations only in contexts where a user name is defined. This could be enforced as follows:
 
