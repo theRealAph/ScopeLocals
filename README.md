@@ -232,13 +232,13 @@ class Logger {
 
 ### Scoped values as capabilities
 
-A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
-
 #### Interlude
 
 ```
-I think the running example provides a better way to explain use of
-Scopedvalue to 'manage' capabilities than the one below.
+
+I don't think the example below is the right way to go. I think the
+running example provides a better use of Scopedvalue to 'manage'
+capabilities rather than 'implement' them..
 
 Why? The code below uses a check for the ScopedValue being bound as a
 way to decide if something has a capability. By contrast, the running
@@ -252,23 +252,26 @@ will normally require a capability object to give responses to
 multiple capability requests (e.g. `Identity.canOpen()` in the running
 example, would probably be one of several checks along with other
 tests such as `Identity.canUpdate()` etc). Using scoped values
-directly, as suggested here, would require a separate ScopedValue for
-each capability.
+directly, as suggested here, would require a separate ScopedValue to
+answer yes or no (i.e. is it bound or unbound) for each capability.
 
-Also, realistically there is likely to be a need to support enumerated
-ands, potentially, sorted ranges for capabilities (e.g
-`Identity.inGroup(Identity.GROUP_B1)`,
+Also, realistically a capability model is likely to be a need to
+support enumerated and, potentially, sorted ranges for capabilities
+(e.g `Identity.inGroup(Identity.GROUP_B1)`,
 `Identity.exceeds(Identity.BEGINNER)`, etc).
 
 So, although scoped values can in theory be used to implement
-capabilties directly simply by virtue of being bound, in practice
-their primary use in any capability sytem will be to deliver a
-capability object like `Identity` securely and directly from caller to
-nested callee without it being visible to, and substitutable by,
-intremediate callers. Suggesting the example below is the way to go
-looks to me like it will be promoting an anti-pattern. It also fails
-to explain the value and utility of the likely use pattern.
+capabilities directly, simply by virtue of being unbound or bound, in
+practice their primary use in any capability sytem will be to deliver
+a capability object like `Identity` securely and directly from caller
+to nested callee without it being visible to, and risk being
+substitutable by, intermediate callers. Suggesting the example below
+is the way to go looks to be promoting an anti-pattern. As a result,
+it also fails to explain the value and utility of the likely use
+pattern.
 ```
+
+A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
 
 For example, suppose a framework allows running certain operations only in contexts where a user name is defined. This could be enforced as follows:
 
