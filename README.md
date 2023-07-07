@@ -373,7 +373,7 @@ by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Identity`
 thread is running, and `scope.join()` ensures that child threads terminate before `run(...)` can return, destroying
 the binding. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
 
-Legacy concurrent execution management classes, such as ExecutorService, that existed prior to the introduction of StructuredTaskScope do not support inheritance of scoped values. They cannot do so because they do not provide the necessary guarantee that newly created child threads will complete before return from the call to `ScopedLocal.run(...)` under which they were created.
+Legacy concurrent execution management classes, such as `ExecutorService`, that existed prior to the introduction of `StructuredTaskScope` do not support inheritance of scoped values. They cannot do so because they do not provide the necessary guarantee that newly created child threads will complete before return from the call to `ScopedLocal.run(...)` under which they were created.
 
 ### Migrating to scoped values
 
