@@ -269,6 +269,10 @@ substitutable by, intermediate callers. Suggesting the example below
 is the way to go looks to be promoting an anti-pattern. As a result,
 it also fails to explain the value and utility of the likely use
 pattern.
+
+I recommend replacing this with a discussion (based on the runnign
+example) that shows how scoped values enable secure transfer of
+capabilities.
 ```
 
 A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
