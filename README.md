@@ -234,9 +234,19 @@ class Logger {
 
 A scoped value provides a simple and robust implementation of a [capability]. The owner of a `ScopedValue` typically guards it in in a field with appropriately restricted access, such as a `private` `static` `final`. A `ScopedValue` object is typically not widely shared.
 
-#### I think the running example provides a better way to explain use of Scopedvalue to manage capabilities
+#### Interlude
 
-Why? The example below uses a check for the ScopedValue being bound as a way to decide if something has a capability. By contrast, the running example uses an object bound to the scoped value to determine whether the thread has a capability. I don't believe the former use is realistic because it only allows yes/no answers to a single permission. Any realistic capability model will likely require a capability object to give responses to multiple capability requests (e.g. `Identity.canOpen()` in the running example, would probably be one of several checks such as `Identity.canUpdate()`). Using scoped values directly would require a separate Scopedvalue for each capability. Also, realistically here is a need to support enumerated ranges of capabilities (e.g `Identity.atLevel(Identity.INTERMEDIATE)`, `Identity.atLevel(Identity.EXPERT)`, etc). So, although scoped values can in theory be used to implement capoabilties in practice their primary use will be to deliver a capability object like `Identity` securely from caller to nested callee, not actually to implement the capability check. Suggesting the example below is the way to go looks to me like it will be promoting an anti-pattern.
+```
+I think the running example provides a better way to explain use of Scopedvalue to 'manage' capabilities than the one below.
+
+Why? The code below uses a check for the ScopedValue being bound as a way to decide if something has a capability. By contrast, the running example uses an object bound to the scoped value to determine whether the thread has a capability and merely relies on the scoped value as a capability _delivery mechanism_.
+
+I don't believe the former use is realistic because it only allows yes/no answers to a single permission. Any realistic capability model will normally require a capability object to give responses to multiple capability requests (e.g. `Identity.canOpen()` in the running example, would probably be one of several checks along with other tests such as `Identity.canUpdate()` etc). Using scoped values directly, as suggested here, would require a separate ScopedValue for each capability.
+
+Also, realistically there is likely to be a need to support enumerated ands, potentially, sorted ranges for capabilities (e.g `Identity.inGroup(Identity.GROUP_B1)`, `Identity.exceeds(Identity.BEGINNER)`, etc).
+
+So, although scoped values can in theory be used to implement capabilties directly simply by virtue of being bound, in practice their primary use in any capability sytem will be to deliver a capability object like `Identity` securely and directly from caller to nested callee without it being visible to, and substitutable by, intremediate callers. Suggesting the example below is the way to go looks to me like it will be promoting an anti-pattern. It also fails to explain the value and utility of the likely use pattern.
+```
 
 For example, suppose a framework allows running certain operations only in contexts where a user name is defined. This could be enforced as follows:
 
