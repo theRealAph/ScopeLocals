@@ -44,12 +44,12 @@ Java applications and libraries are structured as collections of classes which c
 
 Most methods allow a caller to pass data to a method by passing them as parameters. When method A wants method B to do some work for it, it invokes B with the appropriate parameters, and B may pass some of those parameters to C, etc. B may have to include in its parameter list not only the things B directly needs, but the things B has to pass to C. For example, if B is going to set up and execute a database call, it might want a Connection passed in, even if B is not going to use the Connection directly.
 
-Most of the time this "pass what your indirect callees need" approach is the most effective and convenient way to share data. But sometimes we have complicated control flow where facility X (such as a framework) calls some code Y (an application), which then calls back into X.  While sometimes doing it the usual way is fine, sometimes it is impractical to pass everything the indirect X callee needs into the initial call from X to Y.
+Most of the time this "pass what your indirect callees need" approach is the most effective and convenient way to share data. However, sometimes it is impractical to pass all the data that every indirect callee might need in the initial call. This problem often arises when we have complicated control flow where facility X (such as a framework) calls some code Y (an application), which then calls back into X.
 
 An example
 ----------
 
-It is a common pattern in large Java programs to transfer control from one component (a "framework") to another ("application code") and then back. For example, a web framework could accept incoming HTTP requests and then call an application handler to handle it. The application handler may then call the framework to read data to the databse or to call some other HTTP service. 
+It is a common pattern in large Java programs to transfer control from one component (a "framework") to another ("application code") and then back. For example, a web framework could accept incoming HTTP requests and then call an application handler to handle it. The application handler may then call the framework to read data to the database or to call some other HTTP service. 
 
 ```
 @Override
@@ -92,7 +92,7 @@ private UserInfo readUserInfo(FrameworkContext context) {
 }
 ```
 
-There is no way for the user code to _assist_ in the proper handling of the context object. At worst, it could interfere by mixing up contexts; at best it is burdened with the need to add another parameter to all methods that may end up calling back into the framework. If the framework doesn't have context, adding it does not only require the immediate clients -- those user methods that directly call framework methods or those that are directly called by it -- to change their signature, but all intermediate methods as well, even though the context is an internal implementation detail of the framework and user code should not interact with it.
+There is no way for the user code to _assist_ in the proper handling of the context object. At worst, it could interfere by mixing up contexts; at best it is burdened with the need to add another parameter to all methods that may end up calling back into the framework. If the need to pass a context emerges during re-design of the framework, adding it requires not only the immediate clients -- those user methods that directly call framework methods or those that are directly called by it -- to change their signature, but all intermediate methods as well, even though the context is an internal implementation detail of the framework and user code should not interact with it.
 
 ### Thread-local variables for sharing
 
@@ -133,11 +133,11 @@ While `ThreadLocals` have a distinct instantiation in each thread, the value tha
 
 Unfortunately, thread-local variables have numerous design flaws that are impossible to avoid:
 
-- *Unconstrained mutability*  —  Every thread-local variable is mutable: any code that can call the `get()` method of a thread-local variable can call the `set` method of that variable at any time. This is still true even if an object in a thread-local variable is immutable due to every one of its fields being declared final. The `ThreadLocal` API allows this in order to support a fully general model of communication, where data can flow in any direction between methods. , a thread's copy of that thread-local variable can be changed by calling `set()`. This can lead to spaghetti-like data flow, and to programs in which it is hard to discern which method updates shared state and in what order. The more common need, shown in the example above, is a simple one-way transmission of data from one method to others.
+- *Unconstrained mutability*  —  Every thread-local variable is mutable: any code that can call the `get()` method of a thread-local variable can call the `set` method of that variable at any time. This is still true even if an object in a thread-local variable is immutable due to every one of its fields being declared final. The `ThreadLocal` API allows this in order to support a fully general model of communication, where data can flow in any direction between methods. This can lead to spaghetti-like data flow, and to programs in which it is hard to discern which method updates shared state and in what order. The more common need, shown in the example above, is a simple one-way transmission of data from one method to others.
 
 - *Unbounded lifetime* — Once a thread's copy of a thread-local variable is set via the `set` method, the value [to which it was set] is retained for the lifetime of the thread, or until code in the thread calls the `remove` method. Unfortunately, developers often forget to call `remove()`, so per-thread data is often retained for longer than necessary. In particular, if a thread pool is used, the value of a thread-local variable set in one task could, if not properly cleared, accidentally leak into an unrelated task, potentially leading to dangerous security vulnerabilities. In addition, for programs that rely on the unconstrained mutability of thread-local variables, there may be no clear point at which it is safe for a thread to call `remove()`; this can cause a long-term memory leak, since per-thread data will not be garbage-collected until the thread exits. It would be better if the writing and reading of per-thread data occurred in a bounded period during execution of the thread, avoiding the possibility of leaks.
 
-- *Expensive inheritance* — The overhead of thread-local variables may be worse when using large numbers of threads, because thread-local variables of a parent thread can be inherited by child threads. (A thread-local variable is not, in fact, local to one thread.) When a developer chooses to create a child thread that inherits thread-local variables, the child thread has to allocate storage for every thread-local variable previously written in the parent thread. This can add significant memory footprint. Child threads cannot share the storage used by the parent thread because thread-local variables the `ThreadLocal` API requires that changing a thread's copy of athis thread-local variable is not seen in other threads. This is unfortunate, because in practice child threads rarely call the `set` method on their inherited thread-local variables.
+- *Expensive inheritance* — The overhead of thread-local variables may be worse when using large numbers of threads, because thread-local variables of a parent thread can be inherited by child threads. (A thread-local variable is not, in fact, local to one thread.) When a developer chooses to create a child thread that inherits thread-local variables, the child thread has to allocate storage for every thread-local variable previously written in the parent thread. This can add significant memory footprint. Child threads cannot share the storage used by the parent thread because the `ThreadLocal` API requires that changing a thread's copy of the thread-local variable is not seen in other threads. This is unfortunate, because in practice child threads rarely call the `set` method on their inherited thread-local variables.
 
 ### Toward lightweight sharing
 
@@ -300,7 +300,8 @@ Thread 1                        Thread 2
 1. Server.serve     --------------------------------------------+
 ```
 
-The fork/join model offered by `StructuredTaskScope` means that the dynamic scope of the binding is still bounded by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Principal` will remain in scope while the child thread is running, and `scope.join()` ensures that child threads terminate before `run` can return, destroying the binding. This avoids the problem of unbounded lifetimes seen when using thread-local variables.
+The fork/join model offered by `StructuredTaskScope` means that the dynamic scope of the binding is still bounded by the lifetime of the call to `ScopedValue.where(...).run(...)`. The `Principal` will remain in scope while the child thread is running, and `scope.join()` ensures that child threads terminate before `run` can return, destroying the binding. This avoids the problem of unbounded lifetimes seen when using thread-local variables. Legacy thread management classes such as `ForkJoinPool` do not support inheritance of ScopedValues because they cannot guarantee that a child thread forked from some parent thread scope will exit before the parent leaves that scope.
+
 
 ### Migrating to scoped values
 
