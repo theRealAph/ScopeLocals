@@ -3,15 +3,7 @@ Summary
 
 Introduce _scoped values_, values that may be safely and efficiently shared to methods without using method parameters. They are preferred to thread-local variables, especially when using large numbers of virtual threads. This is a [preview API](https://openjdk.org/jeps/12).
 
-
-TL/DR
------
-
-In the Java programming language, data is usually passed to a method by means of a method parameter. The data may need to be passed through a sequence of many methods to get to the method that makes use of the data. 
-
-In effect, a scoped value is an _implicit method parameter_. It is "as if" every method in a sequence of calls has an additional, invisible, parameter. None of the methods declare this parameter and only the methods that have access to the scoped value object can access its value (the data). Scoped values make it possible to securely pass data from a caller to a faraway callee through a sequence of intermediate methods that do not declare a parameter for the data and have no access to the data.
-
-In addition being passed via method calls, scoped values are also passed to subtasks started by instances of `StructuredTaskScope`.
+In effect, a scoped value is an _implicit method parameter_. It is "as if" every method in a sequence of calls has an additional, invisible, parameter. None of the methods declare this parameter and only the methods that have access to the scoped value object can access its value (the data). Scoped values make it possible to pass data securely from a caller to a faraway callee through a sequence of intermediate methods that do not declare a parameter for the data and have no access to the data.
 
 History
 -------
